@@ -1,0 +1,20 @@
+# Credenciales (NUNCA subir)
+.env
+*.zip
+secure-connect-*.zip
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Editores
+.vscode/
+.idea/
+*.swp

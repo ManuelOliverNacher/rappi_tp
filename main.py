@@ -1,0 +1,246 @@
+"""
+RAPPI TP - Aplicación principal con menú diferenciado por rol.
+Ingeniería de Datos II - UADE
+"""
+import os
+from use_cases import auth, cliente, establecimiento, repartidor, admin
+
+# ============================================
+# CREDENCIAL ADMIN (hardcodeada para el TP)
+# ============================================
+ADMIN_USER = "admin"
+ADMIN_PASS = "admin1234"
+
+
+def limpiar_pantalla():
+    os.system('clear' if os.name == 'posix' else 'cls')
+
+
+def header(titulo):
+    limpiar_pantalla()
+    print("=" * 50)
+    print(f"  {titulo}")
+    print("=" * 50)
+
+
+def pedir_opcion(opciones_validas):
+    while True:
+        opcion = input("\nElegí una opción: ").strip()
+        if opcion in opciones_validas:
+            return opcion
+        print(f"❌ Opción inválida. Elegí entre: {', '.join(opciones_validas)}")
+
+
+# ============================================
+# MENÚ PRINCIPAL (selección de rol)
+# ============================================
+def menu_principal():
+    while True:
+        header("🛵  RAPPI - INGRESO")
+        print("""
+  1. 🧑  Soy Cliente
+  2. 🍽️   Soy Establecimiento (restaurante o tienda)
+  3. 🛵  Soy Repartidor
+  4. ⚙️   Admin del sistema
+
+  0. ❌  Salir
+""")
+        opcion = pedir_opcion(["0", "1", "2", "3", "4"])
+
+        if opcion == "0":
+            print("\n👋 ¡Chau!")
+            break
+        elif opcion == "1":
+            flujo_rol("cliente")
+        elif opcion == "2":
+            flujo_rol("establecimiento")
+        elif opcion == "3":
+            flujo_rol("repartidor")
+        elif opcion == "4":
+            flujo_admin()
+
+
+# ============================================
+# FLUJO PARA CLIENTE / ESTABLECIMIENTO / REPARTIDOR
+# ============================================
+def flujo_rol(rol):
+    header(f"🔐  INGRESO COMO {rol.upper()}")
+    print(f"""
+  1. Iniciar sesión
+  2. Registrarme
+  0. Volver
+""")
+    opcion = pedir_opcion(["0", "1", "2"])
+
+    if opcion == "0":
+        return
+    elif opcion == "1":
+        usuario = auth.login(rol)
+        if usuario:
+            mostrar_menu_rol(rol, usuario)
+    elif opcion == "2":
+        if rol == "cliente":
+            auth.registrar_cliente()
+        elif rol == "establecimiento":
+            auth.registrar_establecimiento()
+        elif rol == "repartidor":
+            auth.registrar_repartidor()
+
+
+def mostrar_menu_rol(rol, usuario):
+    if rol == "cliente":
+        menu_cliente(usuario)
+    elif rol == "establecimiento":
+        menu_establecimiento(usuario)
+    elif rol == "repartidor":
+        menu_repartidor(usuario)
+
+
+# ============================================
+# MENÚ CLIENTE
+# ============================================
+def menu_cliente(usuario):
+    while True:
+        header(f"🧑  Cliente: {usuario.get('nombre', 'Usuario')}")
+        print("""
+  1. Ver catálogos de establecimientos
+  2. Agregar producto al carrito
+  3. Ver mi carrito
+  4. Confirmar pedido ⭐
+  5. Ver estado de mis pedidos
+  6. Calificar un pedido
+  7. Ver mi historial de pedidos
+  8. Aplicar promoción
+
+  0. Cerrar sesión
+""")
+        opcion = pedir_opcion(["0", "1", "2", "3", "4", "5", "6", "7", "8"])
+
+        if opcion == "0":
+            auth.logout(usuario)
+            break
+        elif opcion == "1": cliente.ver_catalogos()
+        elif opcion == "2": cliente.agregar_al_carrito(usuario)
+        elif opcion == "3": cliente.ver_carrito(usuario)
+        elif opcion == "4": cliente.confirmar_pedido(usuario)
+        elif opcion == "5": cliente.ver_mis_pedidos(usuario)
+        elif opcion == "6": cliente.calificar_pedido(usuario)
+        elif opcion == "7": cliente.ver_historial(usuario)
+        elif opcion == "8": cliente.aplicar_promocion(usuario)
+
+
+# ============================================
+# MENÚ ESTABLECIMIENTO
+# ============================================
+def menu_establecimiento(usuario):
+    while True:
+        header(f"🍽️  Establecimiento: {usuario.get('nombre', 'Negocio')}")
+        print("""
+  1. Ver mi catálogo
+  2. Agregar producto al catálogo
+  3. Actualizar producto
+  4. Ver pedidos pendientes
+  5. Cambiar estado de un pedido
+  6. Ver calificaciones recibidas
+  7. Responder a una calificación
+  8. Crear promoción
+
+  0. Cerrar sesión
+""")
+        opcion = pedir_opcion(["0", "1", "2", "3", "4", "5", "6", "7", "8"])
+
+        if opcion == "0":
+            auth.logout(usuario)
+            break
+        elif opcion == "1": establecimiento.ver_mi_catalogo(usuario)
+        elif opcion == "2": establecimiento.agregar_producto(usuario)
+        elif opcion == "3": establecimiento.actualizar_producto(usuario)
+        elif opcion == "4": establecimiento.ver_pedidos_pendientes(usuario)
+        elif opcion == "5": establecimiento.cambiar_estado_pedido(usuario)
+        elif opcion == "6": establecimiento.ver_calificaciones(usuario)
+        elif opcion == "7": establecimiento.responder_calificacion(usuario)
+        elif opcion == "8": establecimiento.crear_promocion(usuario)
+
+
+# ============================================
+# MENÚ REPARTIDOR
+# ============================================
+def menu_repartidor(usuario):
+    while True:
+        header(f"🛵  Repartidor: {usuario.get('nombre', 'Repartidor')}")
+        print("""
+  1. Marcar como disponible
+  2. Marcar como ocupado
+  3. Ver pedidos asignados a mí
+  4. Actualizar estado de entrega
+  5. Ver mis calificaciones
+
+  0. Cerrar sesión
+""")
+        opcion = pedir_opcion(["0", "1", "2", "3", "4", "5"])
+
+        if opcion == "0":
+            auth.logout(usuario)
+            break
+        elif opcion == "1": repartidor.marcar_disponible(usuario)
+        elif opcion == "2": repartidor.marcar_ocupado(usuario)
+        elif opcion == "3": repartidor.ver_pedidos_asignados(usuario)
+        elif opcion == "4": repartidor.actualizar_estado_entrega(usuario)
+        elif opcion == "5": repartidor.ver_mis_calificaciones(usuario)
+
+
+# ============================================
+# FLUJO ADMIN
+# ============================================
+def flujo_admin():
+    header("⚙️  ADMIN - INGRESO")
+    user = input("\nUsuario: ").strip()
+    password = input("Password: ").strip()
+
+    if user == ADMIN_USER and password == ADMIN_PASS:
+        menu_admin()
+    else:
+        print("\n❌ Credenciales incorrectas")
+        input("\nPresioná Enter para continuar...")
+
+
+def menu_admin():
+    while True:
+        header("⚙️  ADMIN - PANEL")
+        print("""
+  1. Cargar datos de prueba (seed)
+  2. Verificar conexión a las 5 bases
+  3. Reportes:
+     a. Pedidos por ciudad
+     b. Productos más solicitados
+     c. Restaurantes más populares
+     d. Categorías top los findes
+     e. Pedidos >$50 entregados en <30 min
+     f. Productos con >100 pedidos o calif >4.5
+  4. Limpiar TODAS las bases
+
+  0. Cerrar sesión
+""")
+        opcion = pedir_opcion(["0", "1", "2", "a", "b", "c", "d", "e", "f", "4"])
+
+        if opcion == "0":
+            break
+        elif opcion == "1": admin.cargar_datos_prueba()
+        elif opcion == "2": admin.verificar_conexiones()
+        elif opcion == "a": admin.reporte_pedidos_por_ciudad()
+        elif opcion == "b": admin.reporte_productos_mas_solicitados()
+        elif opcion == "c": admin.reporte_restaurantes_populares()
+        elif opcion == "d": admin.reporte_categorias_findes()
+        elif opcion == "e": admin.reporte_rapidos_y_caros()
+        elif opcion == "f": admin.reporte_top_productos()
+        elif opcion == "4": admin.limpiar_todas_las_bases()
+
+
+# ============================================
+# ENTRY POINT
+# ============================================
+if __name__ == "__main__":
+    try:
+        menu_principal()
+    except KeyboardInterrupt:
+        print("\n\n👋 ¡Chau!")
