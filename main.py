@@ -1,13 +1,10 @@
 """
-RAPPI TP - Aplicación principal con menú diferenciado por rol.
-Ingeniería de Datos II - UADE
+RAPPI TP - Aplicacion principal con menu diferenciado por rol.
+Ingenieria de Datos II - UADE
 """
 import os
 from use_cases import auth, cliente, establecimiento, repartidor, admin
 
-# ============================================
-# CREDENCIAL ADMIN (hardcodeada para el TP)
-# ============================================
 ADMIN_USER = "admin"
 ADMIN_PASS = "admin1234"
 
@@ -25,30 +22,27 @@ def header(titulo):
 
 def pedir_opcion(opciones_validas):
     while True:
-        opcion = input("\nElegí una opción: ").strip()
+        opcion = input("\nElegi una opcion: ").strip()
         if opcion in opciones_validas:
             return opcion
-        print(f"❌ Opción inválida. Elegí entre: {', '.join(opciones_validas)}")
+        print(f"Opcion invalida. Elegi entre: {', '.join(opciones_validas)}")
 
 
-# ============================================
-# MENÚ PRINCIPAL (selección de rol)
-# ============================================
 def menu_principal():
     while True:
-        header("🛵  RAPPI - INGRESO")
+        header("RAPPI - INGRESO")
         print("""
-  1. 🧑  Soy Cliente
-  2. 🍽️   Soy Establecimiento (restaurante o tienda)
-  3. 🛵  Soy Repartidor
-  4. ⚙️   Admin del sistema
+  1. Soy Cliente
+  2. Soy Establecimiento (restaurante o tienda)
+  3. Soy Repartidor
+  4. Admin del sistema
 
-  0. ❌  Salir
+  0. Salir
 """)
         opcion = pedir_opcion(["0", "1", "2", "3", "4"])
 
         if opcion == "0":
-            print("\n👋 ¡Chau!")
+            print("\nHasta luego")
             break
         elif opcion == "1":
             flujo_rol("cliente")
@@ -60,13 +54,10 @@ def menu_principal():
             flujo_admin()
 
 
-# ============================================
-# FLUJO PARA CLIENTE / ESTABLECIMIENTO / REPARTIDOR
-# ============================================
 def flujo_rol(rol):
-    header(f"🔐  INGRESO COMO {rol.upper()}")
+    header(f"INGRESO COMO {rol.upper()}")
     print(f"""
-  1. Iniciar sesión
+  1. Iniciar sesion
   2. Registrarme
   0. Volver
 """)
@@ -96,23 +87,20 @@ def mostrar_menu_rol(rol, usuario):
         menu_repartidor(usuario)
 
 
-# ============================================
-# MENÚ CLIENTE
-# ============================================
 def menu_cliente(usuario):
     while True:
-        header(f"🧑  Cliente: {usuario.get('nombre', 'Usuario')}")
+        header(f"Cliente: {usuario.get('nombre', 'Usuario')}")
         print("""
-  1. Ver catálogos de establecimientos
+  1. Ver catalogos de establecimientos
   2. Agregar producto al carrito
   3. Ver mi carrito
-  4. Confirmar pedido ⭐
+  4. Confirmar pedido
   5. Ver estado de mis pedidos
   6. Calificar un pedido
   7. Ver mi historial de pedidos
-  8. Aplicar promoción
+  8. Aplicar promocion
 
-  0. Cerrar sesión
+  0. Cerrar sesion
 """)
         opcion = pedir_opcion(["0", "1", "2", "3", "4", "5", "6", "7", "8"])
 
@@ -129,23 +117,20 @@ def menu_cliente(usuario):
         elif opcion == "8": cliente.aplicar_promocion(usuario)
 
 
-# ============================================
-# MENÚ ESTABLECIMIENTO
-# ============================================
 def menu_establecimiento(usuario):
     while True:
-        header(f"🍽️  Establecimiento: {usuario.get('nombre', 'Negocio')}")
+        header(f"Establecimiento: {usuario.get('nombre', 'Negocio')}")
         print("""
-  1. Ver mi catálogo
-  2. Agregar producto al catálogo
+  1. Ver mi catalogo
+  2. Agregar producto al catalogo
   3. Actualizar producto
   4. Ver pedidos pendientes
   5. Cambiar estado de un pedido
   6. Ver calificaciones recibidas
-  7. Responder a una calificación
-  8. Crear promoción
+  7. Responder a una calificacion
+  8. Crear promocion
 
-  0. Cerrar sesión
+  0. Cerrar sesion
 """)
         opcion = pedir_opcion(["0", "1", "2", "3", "4", "5", "6", "7", "8"])
 
@@ -162,20 +147,17 @@ def menu_establecimiento(usuario):
         elif opcion == "8": establecimiento.crear_promocion(usuario)
 
 
-# ============================================
-# MENÚ REPARTIDOR
-# ============================================
 def menu_repartidor(usuario):
     while True:
-        header(f"🛵  Repartidor: {usuario.get('nombre', 'Repartidor')}")
+        header(f"Repartidor: {usuario.get('nombre', 'Repartidor')}")
         print("""
   1. Marcar como disponible
   2. Marcar como ocupado
-  3. Ver pedidos asignados a mí
+  3. Ver pedidos asignados a mi
   4. Actualizar estado de entrega
   5. Ver mis calificaciones
 
-  0. Cerrar sesión
+  0. Cerrar sesion
 """)
         opcion = pedir_opcion(["0", "1", "2", "3", "4", "5"])
 
@@ -189,37 +171,34 @@ def menu_repartidor(usuario):
         elif opcion == "5": repartidor.ver_mis_calificaciones(usuario)
 
 
-# ============================================
-# FLUJO ADMIN
-# ============================================
 def flujo_admin():
-    header("⚙️  ADMIN - INGRESO")
+    header("ADMIN - INGRESO")
     user = input("\nUsuario: ").strip()
     password = input("Password: ").strip()
 
     if user == ADMIN_USER and password == ADMIN_PASS:
         menu_admin()
     else:
-        print("\n❌ Credenciales incorrectas")
-        input("\nPresioná Enter para continuar...")
+        print("\nCredenciales incorrectas")
+        input("\nPresione Enter para continuar...")
 
 
 def menu_admin():
     while True:
-        header("⚙️  ADMIN - PANEL")
+        header("ADMIN - PANEL")
         print("""
   1. Cargar datos de prueba (seed)
-  2. Verificar conexión a las 5 bases
+  2. Verificar conexion a las 5 bases
   3. Reportes:
      a. Pedidos por ciudad
-     b. Productos más solicitados
-     c. Restaurantes más populares
-     d. Categorías top los findes
+     b. Productos mas solicitados
+     c. Restaurantes mas populares
+     d. Categorias top los findes
      e. Pedidos >$50 entregados en <30 min
      f. Productos con >100 pedidos o calif >4.5
   4. Limpiar TODAS las bases
 
-  0. Cerrar sesión
+  0. Cerrar sesion
 """)
         opcion = pedir_opcion(["0", "1", "2", "a", "b", "c", "d", "e", "f", "4"])
 
@@ -236,11 +215,8 @@ def menu_admin():
         elif opcion == "4": admin.limpiar_todas_las_bases()
 
 
-# ============================================
-# ENTRY POINT
-# ============================================
 if __name__ == "__main__":
     try:
         menu_principal()
     except KeyboardInterrupt:
-        print("\n\n👋 ¡Chau!")
+        print("\n\nHasta luego")
