@@ -187,32 +187,34 @@ def menu_admin():
     while True:
         header("ADMIN - PANEL")
         print("""
-  1. Cargar datos de prueba (seed)
-  2. Verificar conexion a las 5 bases
-  3. Reportes:
-     a. Pedidos por ciudad
-     b. Productos mas solicitados
-     c. Restaurantes mas populares
-     d. Categorias top los findes
-     e. Pedidos >$50 entregados en <30 min
-     f. Productos con >100 pedidos o calif >4.5
-  4. Limpiar TODAS las bases
+  GESTION:
+   1. Cargar datos de prueba (seed)
+   2. Verificar conexion a las 5 bases
+   3. Limpiar TODAS las bases
 
-  0. Cerrar sesion
+  REPORTES:
+   4. Pedidos por ciudad
+   5. Productos mas solicitados
+   6. Restaurantes mas populares
+   7. Categorias top los fines de semana
+   8. Pedidos >$50 entregados en <30 min
+   9. Productos con >100 pedidos o calif >4.5
+
+   0. Cerrar sesion
 """)
-        opcion = pedir_opcion(["0", "1", "2", "a", "b", "c", "d", "e", "f", "4"])
+        opcion = pedir_opcion(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"])
 
         if opcion == "0":
             break
         elif opcion == "1": admin.cargar_datos_prueba()
         elif opcion == "2": admin.verificar_conexiones()
-        elif opcion == "a": admin.reporte_pedidos_por_ciudad()
-        elif opcion == "b": admin.reporte_productos_mas_solicitados()
-        elif opcion == "c": admin.reporte_restaurantes_populares()
-        elif opcion == "d": admin.reporte_categorias_findes()
-        elif opcion == "e": admin.reporte_rapidos_y_caros()
-        elif opcion == "f": admin.reporte_top_productos()
-        elif opcion == "4": admin.limpiar_todas_las_bases()
+        elif opcion == "3": admin.limpiar_todas_las_bases()
+        elif opcion == "4": admin.reporte_pedidos_por_ciudad()
+        elif opcion == "5": admin.reporte_productos_mas_solicitados()
+        elif opcion == "6": admin.reporte_restaurantes_populares()
+        elif opcion == "7": admin.reporte_categorias_findes()
+        elif opcion == "8": admin.reporte_rapidos_y_caros()
+        elif opcion == "9": admin.reporte_top_productos()
 
 
 if __name__ == "__main__":

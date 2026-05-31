@@ -539,5 +539,105 @@ def responder_calificacion(establecimiento):
 
 
 def crear_promocion(establecimiento):
-    print("Crear promocion - Aun no implementado")
+    print("\nCREAR PROMOCION\n")
+    print("(Escribi '0' en cualquier campo para cancelar)\n")
+
+    codigo = pedir_dato("Codigo de la promocion (ej: VERANO20)")
+    if codigo is None: return
+    codigo = codigo.upper()
+
+    descripcion = pedir_dato("Descripcion")
+    if descripcion is None: return
+
+    while True:
+        descuento_str = pedir_dato("Descuento (% off, ej: 20)")
+        if descuento_str is None: return
+        try:
+            descuento = float(descuento_str)
+            if 0 < descuento <= 100:
+                break
+            print("  El descuento tiene que estar entre 1 y 100")
+        except ValueError:
+            print("  Tiene que ser un numero")
+
+    while True:
+        monto_min_str = pedir_dato("Monto minimo de compra (0 si no aplica)", requerido=False)
+        if monto_min_str is None: return
+        if not monto_min_str:
+            monto_minimo = 0
+            break
+        try:
+            monto_minimo = float(monto_min_str)
+            break
+        except ValueError:
+            print("  Tiene que ser un numero")
+
+    # Fechas
+    from datetime import datetime, timedelta
+    hoy = datetime.now().date()
+
+    while True:
+        dias_str = pedir_dato("Duracion en dias (ej: 30)")
+        if dias_str is None: return
+        try:
+            dias = int(dias_str)
+            if dias > 0:
+                break
+            print("  Tiene que ser mayor a 0")
+        except ValueError:
+            print("  Tiene que ser un numero entero")
+
+    fecha_inicio = hoy
+    fecha_fin = hoy + timedelta(days=dias)
+
+    condiciones = pedir_dato("Condiciones (texto libre)", requerido=False)
+    if condiciones is None: return
+
+    conn = get_postgres()
+    cur = conn.cursor()
+    try:
+        # Verificar que el codigo no exista
+        cur.execute("SELECT id_promocion FROM promocion WHERE codigo = %s", (codigo,))
+        if cur.fetchone():
+            print(f"\nYa existe una promocion con el codigo {codigo}")
+            input("\nPresione Enter para continuar...")
+            return
+
+        cur.execute("""
+            INSERT INTO promocion (codigo, descripcion, descuento, fecha_inicio, fecha_fin, monto_minimo, condiciones, creada_por)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id_promocion
+        """, (codigo, descripcion, descuento, fecha_inicio, fecha_fin, monto_minimo, condiciones, establecimiento["nombre"]))
+        id_promo = cur.fetchone()[0]
+        conn.commit()
+
+        # Redis: cachear la promocion con TTL hasta la fecha de fin
+        import json
+        r = get_redis()
+        clave_cache = f"promo:{codigo}"
+        promo_data = {
+            "id_promocion": id_promo,
+            "codigo": codigo,
+            "descripcion": descripcion,
+            "descuento": descuento,
+            "fecha_inicio": str(fecha_inicio),
+            "fecha_fin": str(fecha_fin),
+            "monto_minimo": monto_minimo,
+            "condiciones": condiciones
+        }
+        ttl_segundos = dias * 24 * 60 * 60
+        r.set(clave_cache, json.dumps(promo_data), ex=ttl_segundos)
+
+        print(f"\nPromocion creada correctamente")
+        print(f"  Codigo: {codigo}")
+        print(f"  Descuento: {descuento}%")
+        print(f"  Valida hasta: {fecha_fin}")
+        print(f"  Cacheada en Redis con TTL de {dias} dias")
+
+    except Exception as e:
+        conn.rollback()
+        print(f"\nError: {e}")
+    finally:
+        cur.close()
+        conn.close()
+
     input("\nPresione Enter para continuar...")
