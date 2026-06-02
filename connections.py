@@ -53,7 +53,11 @@ def get_cassandra():
         os.getenv("ASTRA_CLIENT_ID"),
         os.getenv("ASTRA_SECRET")
     )
-    kwargs = {"cloud": cloud_config, "auth_provider": auth_provider}
+    kwargs = {
+        "cloud": cloud_config,
+        "auth_provider": auth_provider,
+        "protocol_version": 4
+    }
     if CASSANDRA_CONNECTION_CLASS:
         kwargs["connection_class"] = CASSANDRA_CONNECTION_CLASS
     cluster = Cluster(**kwargs)
