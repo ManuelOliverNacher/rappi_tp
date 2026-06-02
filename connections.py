@@ -1,5 +1,19 @@
 import os
 from dotenv import load_dotenv
+
+load_dotenv()
+
+# Compatibilidad para Cassandra en Python 3.12+
+# IMPORTANTE: tiene que ir ANTES del import de cassandra.cluster
+# porque ese import carga 'asyncore' que no existe en Python 3.12+
+CASSANDRA_CONNECTION_CLASS = None
+if os.getenv("USE_ASYNCIO_CASSANDRA", "false").lower() == "true":
+    try:
+        from cassandra.io.asyncioreactor import AsyncioConnection
+        CASSANDRA_CONNECTION_CLASS = AsyncioConnection
+    except ImportError:
+        pass
+
 import psycopg2
 from pymongo import MongoClient
 from cassandra.cluster import Cluster
