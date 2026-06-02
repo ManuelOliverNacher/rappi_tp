@@ -1,10 +1,6 @@
-# Credenciales (NUNCA subir)
-.env
-*.zip
-secure-connect-*.zip
+
 
 # Python
-venv/
 __pycache__/
 *.pyc
 *.pyo
