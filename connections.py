@@ -46,6 +46,7 @@ def get_mongo():
 
 
 def get_cassandra():
+    from cassandra import ProtocolVersion
     cloud_config = {
         'secure_connect_bundle': os.getenv("ASTRA_SECURE_BUNDLE")
     }
@@ -56,7 +57,7 @@ def get_cassandra():
     kwargs = {
         "cloud": cloud_config,
         "auth_provider": auth_provider,
-        "protocol_version": 4
+        "protocol_version": ProtocolVersion.V4
     }
     if CASSANDRA_CONNECTION_CLASS:
         kwargs["connection_class"] = CASSANDRA_CONNECTION_CLASS
@@ -66,8 +67,11 @@ def get_cassandra():
 
 
 def get_neo4j():
+    uri = os.getenv("NEO4J_URI")
+    if uri.startswith("neo4j+s://"):
+        uri = uri.replace("neo4j+s://", "neo4j+ssc://")
     driver = GraphDatabase.driver(
-        os.getenv("NEO4J_URI"),
+        uri,
         auth=(os.getenv("NEO4J_USER"), os.getenv("NEO4J_PASSWORD"))
     )
     return driver
