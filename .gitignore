@@ -1,10 +1,21 @@
-
-
 # Python
 __pycache__/
 *.pyc
 *.pyo
 .Python
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Secrets - NUNCA subir
+.env
+*.env
+
+# Cassandra bundle
+*.zip
+secure-connect-*.zip
 
 # Sistema operativo
 .DS_Store
