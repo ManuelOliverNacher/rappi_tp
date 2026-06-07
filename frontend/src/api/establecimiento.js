@@ -23,3 +23,6 @@ export const responderCalificacion = (id_calificacion, respuesta) =>
 
 export const crearPromocion = (data) =>
   api.post('/establecimiento/promocion', data).then(r => r.data)
+
+export const actualizarProducto = (id_producto, campos) =>
+  api.patch(`/establecimiento/producto/${id_producto}`, campos).then(r => r.data)
