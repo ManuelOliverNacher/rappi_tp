@@ -124,6 +124,13 @@ class ProductoBody(BaseModel):
 class DisponibilidadBody(BaseModel):
     disponible: bool
 
+class ActualizarProductoBody(BaseModel):
+    nombre: Optional[str] = None
+    precio: Optional[float] = None
+    categoria: Optional[str] = None
+    descripcion: Optional[str] = None
+    disponible: Optional[bool] = None
+
 class EstadoBody(BaseModel):
     estado: str
     observacion: Optional[str] = None
@@ -826,6 +833,24 @@ def toggle_disponibilidad(id_producto: str, body: DisponibilidadBody, user=Depen
         {"_id": user["id"], "catalogo.id_producto": id_producto},
         {"$set": {"catalogo.$.disponible": body.disponible}}
     )
+    get_redis().delete(f"catalogo:establecimiento:{user['id']}")
+    return {"ok": True}
+
+@app.patch("/api/establecimiento/producto/{id_producto}")
+def actualizar_producto(id_producto: str, body: ActualizarProductoBody, user=Depends(_est_user)):
+    db = get_mongo()
+    update_fields = {
+        f"catalogo.$.{k}": v
+        for k, v in body.model_dump(exclude_none=True).items()
+    }
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No hay campos para actualizar")
+    result = db.catalogo_establecimientos.update_one(
+        {"_id": user["id"], "catalogo.id_producto": id_producto},
+        {"$set": update_fields}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
     get_redis().delete(f"catalogo:establecimiento:{user['id']}")
     return {"ok": True}
 
