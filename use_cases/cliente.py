@@ -574,9 +574,9 @@ def ver_mis_pedidos(cliente):
 
         if estado_actual:
             ultimo = estado_actual[0]
-            estado_txt = f"{ultimo.estado.upper()}"
-            if ultimo.observacion:
-                estado_txt += f" ({ultimo.observacion})"
+            estado_txt = f"{ultimo['estado'].upper()}"
+            if ultimo.get("observacion"):
+                estado_txt += f" ({ultimo['observacion']})"
         else:
             estado_txt = "SIN ESTADOS REGISTRADOS"
 
@@ -609,10 +609,17 @@ def ver_mis_pedidos(cliente):
             if not timeline:
                 print("Sin estados registrados")
             else:
-                timeline.sort(key=lambda r: r.fecha_hora)
+                from datetime import datetime as _dt
+                def _ts(v):
+                    if isinstance(v, str):
+                        return _dt.fromisoformat(v.replace("Z", "+00:00").replace("+0000", "+00:00"))
+                    return v
+                timeline.sort(key=lambda r: _ts(r["fecha_hora"]) if isinstance(r, dict) else r.fecha_hora)
                 for r in timeline:
-                    obs = f" - {r.observacion}" if r.observacion else ""
-                    print(f"  {r.fecha_hora.strftime('%d/%m %H:%M:%S')}  ->  {r.estado.upper()}{obs}")
+                    fh = _ts(r["fecha_hora"]) if isinstance(r, dict) else r.fecha_hora
+                    obs = f" - {r.get('observacion')}" if isinstance(r, dict) and r.get("observacion") else (f" - {r.observacion}" if not isinstance(r, dict) and r.observacion else "")
+                    estado_r = r["estado"] if isinstance(r, dict) else r.estado
+                    print(f"  {fh.strftime('%d/%m %H:%M:%S')}  ->  {estado_r.upper()}{obs}")
 
         except ValueError:
             pass
@@ -656,7 +663,7 @@ def calificar_pedido(cliente):
             "SELECT estado FROM estado_pedido WHERE id_pedido = %s LIMIT 1",
             (id_p,)
         ))
-        if rows and rows[0].estado == "entregado":
+        if rows and rows[0]["estado"] == "entregado":
             entregados.append(pedido)
 
     if not entregados:

@@ -256,7 +256,7 @@ def ver_pedidos_pendientes(establecimiento):
         rows = list(session.execute("""
             SELECT estado FROM estado_pedido WHERE id_pedido = %s LIMIT 1
         """, (id_pedido,)))
-        estado = rows[0].estado.upper() if rows else "DESCONOCIDO"
+        estado = rows[0]["estado"].upper() if rows else "DESCONOCIDO"
 
         print(f"  Pedido #{id_pedido}  -  {fecha.strftime('%d/%m %H:%M')}")
         print(f"  Cliente: {nombre} {apellido}")
@@ -267,100 +267,6 @@ def ver_pedidos_pendientes(establecimiento):
     input("\nPresione Enter para continuar...")
 
 
-def cambiar_estado_pedido(establecimiento):
-    print("\nCAMBIAR ESTADO DE UN PEDIDO\n")
-
-    # Postgres: traer pedidos del establecimiento
-    conn = get_postgres()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT p.id_pedido, p.fecha_hora, c.nombre, c.apellido
-        FROM pedido p
-        JOIN cliente c ON p.id_cliente = c.id_cliente
-        WHERE p.id_establecimiento = %s
-        ORDER BY p.fecha_hora DESC
-    """, (establecimiento["id"],))
-    pedidos = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    if not pedidos:
-        print("No tenes pedidos para gestionar")
-        input("\nPresione Enter para continuar...")
-        return
-
-    # Cassandra: estado actual
-    from connections import get_cassandra
-    session = get_cassandra()
-
-    print("Tus pedidos:\n")
-    pedidos_con_estado = []
-    for id_pedido, fecha, nombre, apellido in pedidos:
-        rows = list(session.execute("""
-            SELECT estado FROM estado_pedido WHERE id_pedido = %s LIMIT 1
-        """, (id_pedido,)))
-        estado = rows[0].estado if rows else "desconocido"
-        pedidos_con_estado.append((id_pedido, fecha, nombre, apellido, estado))
-
-    for i, (id_p, fecha, n, a, est) in enumerate(pedidos_con_estado, 1):
-        print(f"  {i}. Pedido #{id_p}  -  {n} {a}  -  Estado: {est.upper()}")
-    print("  0. Cancelar")
-
-    while True:
-        opcion = input("\n  Elegi un pedido: ").strip()
-        if opcion == "0":
-            return
-        try:
-            idx = int(opcion) - 1
-            if 0 <= idx < len(pedidos_con_estado):
-                id_pedido_sel, _, _, _, estado_actual = pedidos_con_estado[idx]
-                break
-        except ValueError:
-            pass
-        print("  Opcion invalida")
-
-    # Estados validos que puede setear el establecimiento
-    estados_establecimiento = ["aceptado", "preparando", "listo_para_retirar", "cancelado"]
-
-    print(f"\nEstado actual: {estado_actual.upper()}")
-    print("\nNuevo estado:")
-    for i, est in enumerate(estados_establecimiento, 1):
-        print(f"  {i}. {est}")
-    print("  0. Cancelar")
-
-    while True:
-        opcion = input("\n  Elegi el nuevo estado: ").strip()
-        if opcion == "0":
-            return
-        try:
-            idx = int(opcion) - 1
-            if 0 <= idx < len(estados_establecimiento):
-                nuevo_estado = estados_establecimiento[idx]
-                break
-        except ValueError:
-            pass
-        print("  Opcion invalida")
-
-    observacion = input("  Observacion (opcional, Enter para saltear): ").strip()
-
-    # Cassandra: insertar nuevo estado con fecha actual
-    from datetime import datetime
-    ahora = datetime.utcnow()
-    try:
-        session.execute("""
-            INSERT INTO estado_pedido (id_pedido, fecha_hora, estado, observacion)
-            VALUES (%s, %s, %s, %s)
-        """, (id_pedido_sel, ahora, nuevo_estado, observacion or None))
-
-        # Redis: invalidar cache de estado del pedido (si despues lo cacheamos)
-        r = get_redis()
-        r.delete(f"estado:pedido:{id_pedido_sel}")
-
-        print(f"\nEstado actualizado: pedido #{id_pedido_sel} -> {nuevo_estado.upper()}")
-    except Exception as e:
-        print(f"\nError: {e}")
-
-    input("\nPresione Enter para continuar...")
 
 
 def cambiar_estado_pedido(establecimiento):
@@ -393,7 +299,7 @@ def cambiar_estado_pedido(establecimiento):
         rows = list(session.execute("""
             SELECT estado FROM estado_pedido WHERE id_pedido = %s LIMIT 1
         """, (id_pedido,)))
-        estado = rows[0].estado if rows else "desconocido"
+        estado = rows[0]["estado"] if rows else "desconocido"
         pedidos_con_estado.append((id_pedido, fecha, nombre, apellido, estado))
 
     for i, (id_p, fecha, n, a, est) in enumerate(pedidos_con_estado, 1):
@@ -449,7 +355,9 @@ def cambiar_estado_pedido(establecimiento):
 
         print(f"\nEstado actualizado: pedido #{id_pedido_sel} -> {nuevo_estado.upper()}")
     except Exception as e:
-        print(f"\nError: {e}")
+        import traceback
+        print(f"\nError al actualizar estado: {e}")
+        traceback.print_exc()
 
     input("\nPresione Enter para continuar...")
 

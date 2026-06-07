@@ -576,13 +576,20 @@ def reporte_rapidos_y_caros():
             SELECT estado, fecha_hora FROM estado_pedido WHERE id_pedido = %s
         """, (id_pedido,)))
 
+        from datetime import datetime as _dt
+        def _ts(v):
+            if isinstance(v, str):
+                return _dt.fromisoformat(v.replace("Z", "+00:00").replace("+0000", "+00:00"))
+            return v
         creado = None
         entregado = None
         for r in rows:
-            if r.estado == "creado":
-                creado = r.fecha_hora
-            elif r.estado == "entregado":
-                entregado = r.fecha_hora
+            estado_r = r["estado"] if isinstance(r, dict) else r.estado
+            fh_r = _ts(r["fecha_hora"]) if isinstance(r, dict) else r.fecha_hora
+            if estado_r == "creado":
+                creado = fh_r
+            elif estado_r == "entregado":
+                entregado = fh_r
 
         if creado and entregado:
             duracion_seg = (entregado - creado).total_seconds()

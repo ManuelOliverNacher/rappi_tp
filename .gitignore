@@ -25,3 +25,11 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Claude Code (configuracion personal del IDE)
+.claude/

@@ -114,7 +114,7 @@ def ver_pedidos_asignados(repartidor):
             "SELECT estado FROM estado_pedido WHERE id_pedido = %s LIMIT 1",
             (id_p,)
         ))
-        if rows and rows[0].estado == "listo_para_retirar":
+        if rows and rows[0]["estado"] == "listo_para_retirar":
             disponibles.append((id_p, fecha, total, est))
 
     # Mostrar mis pedidos
@@ -125,7 +125,7 @@ def ver_pedidos_asignados(repartidor):
                 "SELECT estado FROM estado_pedido WHERE id_pedido = %s LIMIT 1",
                 (id_p,)
             ))
-            estado = rows[0].estado.upper() if rows else "?"
+            estado = rows[0]["estado"].upper() if rows else "?"
             print(f"  Pedido #{id_p}  -  {est_nombre}  -  Estado: {estado}")
             print(f"    Cliente: {c_nom} {c_ape}")
             print(f"    Direccion entrega: {calle} {num}, {ciudad}")
@@ -252,7 +252,7 @@ def actualizar_estado_entrega(repartidor):
             "SELECT estado FROM estado_pedido WHERE id_pedido = %s LIMIT 1",
             (id_p,)
         ))
-        estado = rows[0].estado if rows else "?"
+        estado = rows[0]["estado"] if rows else "?"
         pedidos_con_estado.append((id_p, fecha, est, cn, ca, estado))
 
     for i, (id_p, _, est, cn, ca, estado) in enumerate(pedidos_con_estado, 1):
