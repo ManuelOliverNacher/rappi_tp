@@ -3,7 +3,7 @@ import Layout from '../../components/Layout.jsx'
 import Badge from '../../components/Badge.jsx'
 import { getPedidosEst, cambiarEstadoPedido } from '../../api/establecimiento.js'
 
-const ESTADOS_OPCIONES = ['creado', 'aceptado', 'preparando', 'listo_para_retirar', 'repartidor_asignado', 'en_camino', 'entregado', 'cancelado']
+const ESTADOS_OPCIONES = ['creado', 'aceptado', 'preparando', 'listo_para_retirar', 'cancelado']
 
 export default function Pedidos() {
   const [pedidos, setPedidos] = useState([])
