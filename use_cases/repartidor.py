@@ -208,8 +208,6 @@ def tomar_pedido(repartidor, id_pedido):
         # Redis: marcar repartidor como ocupado
         r.smove("repartidores:disponibles", "repartidores:ocupados", str(repartidor["id"]))
 
-        # Neo4j: relacion ENTREGO (la creamos cuando entregue, no ahora)
-
         print(f"\nPedido #{id_pedido} asignado a vos")
     finally:
         r.delete(lock_key)
@@ -273,11 +271,16 @@ def actualizar_estado_entrega(repartidor):
             pass
         print("  Opcion invalida")
 
-    estados_repartidor = ["en_camino", "entregado"]
+    # === CORRECCIÓN DEL DROPDOWN VISUAL ===
+    estados_repartidor = [
+        {"visual": "En Camino", "db": "en_camino"},
+        {"visual": "Entregado", "db": "entregado"}
+    ]
+    
     print(f"\nEstado actual: {estado_actual.upper()}")
     print("\nNuevo estado:")
     for i, est in enumerate(estados_repartidor, 1):
-        print(f"  {i}. {est}")
+        print(f"  {i}. {est['visual']}")
     print("  0. Cancelar")
 
     while True:
@@ -287,11 +290,13 @@ def actualizar_estado_entrega(repartidor):
         try:
             idx = int(opcion) - 1
             if 0 <= idx < len(estados_repartidor):
-                nuevo_estado = estados_repartidor[idx]
+                nuevo_estado_db = estados_repartidor[idx]['db']
+                nuevo_estado_visual = estados_repartidor[idx]['visual']
                 break
         except ValueError:
             pass
         print("  Opcion invalida")
+    # ======================================
 
     observacion = input("  Observacion (opcional): ").strip()
 
@@ -299,10 +304,10 @@ def actualizar_estado_entrega(repartidor):
     session.execute("""
         INSERT INTO estado_pedido (id_pedido, fecha_hora, estado, observacion)
         VALUES (%s, %s, %s, %s)
-    """, (id_pedido_sel, datetime.utcnow(), nuevo_estado, observacion or None))
+    """, (id_pedido_sel, datetime.utcnow(), nuevo_estado_db, observacion or None))
 
     # Si entrego, crear relacion en Neo4j y liberar al repartidor
-    if nuevo_estado == "entregado":
+    if nuevo_estado_db == "entregado":
         try:
             from connections import get_neo4j
             driver = get_neo4j()
@@ -324,41 +329,95 @@ def actualizar_estado_entrega(repartidor):
         except Exception as e:
             print(f"\n(Aviso: {e})")
 
-    print(f"\nEstado actualizado: pedido #{id_pedido_sel} -> {nuevo_estado.upper()}")
+    print(f"\nEstado actualizado: pedido #{id_pedido_sel} -> {nuevo_estado_visual.upper()}")
     input("\nPresione Enter para continuar...")
 
 
 # ============================================
-# VER MIS CALIFICACIONES (placeholder)
+# VER MIS CALIFICACIONES
 # ============================================
 def ver_mis_calificaciones(repartidor):
     print("\nMIS CALIFICACIONES\n")
 
     from connections import get_mongo
     db = get_mongo()
+    
+    # Buscamos calificaciones que le pertenezcan a este repartidor
     califs = list(db.calificaciones.find({
         "id_repartidor": repartidor["id"],
         "calificacion_repartidor": {"$exists": True}
     }))
 
     if not califs:
-        print("Todavia no tenes calificaciones")
+        print("Todavia no tenes calificaciones registradas.")
         input("\nPresione Enter para continuar...")
         return
 
-    puntajes = [c["calificacion_repartidor"]["puntaje"] for c in califs]
+    # Extraemos puntajes de forma segura
+    puntajes = [c["calificacion_repartidor"].get("puntaje", 0) for c in califs if "puntaje" in c["calificacion_repartidor"]]
+    
+    if not puntajes:
+        print("Hay calificaciones, pero no contienen puntajes numéricos.")
+        input("\nPresione Enter para continuar...")
+        return
+
     promedio = sum(puntajes) / len(puntajes)
 
-    print(f"Total: {len(califs)} calificaciones")
-    print(f"Promedio: {promedio:.2f} / 5\n")
+    print(f"Total: {len(puntajes)} calificaciones")
+    print(f"Promedio: {promedio:.2f} ⭐ / 5.00\n")
     print("-" * 70)
 
     for c in califs:
-        cr = c["calificacion_repartidor"]
-        print(f"  Pedido: {c['_id']}")
-        print(f"  Puntaje: {cr['puntaje']} / 5")
-        if cr.get("comentario"):
-            print(f"  Comentario: {cr['comentario']}")
+        cr = c.get("calificacion_repartidor", {})
+        puntaje = cr.get('puntaje', 'N/A')
+        comentario = cr.get('comentario', 'Sin comentario')
+        
+        print(f"  Pedido ID: {c['_id']}")
+        print(f"  Puntaje: {puntaje} ⭐")
+        print(f"  Comentario: '{comentario}'")
         print("-" * 70)
 
     input("\nPresione Enter para continuar...")
+
+
+# ============================================
+# EXTRA: VER RESUMEN DEL PEDIDO (Para el Frontend)
+# ============================================
+def ver_resumen_pedido(id_pedido):
+    """
+    Función de apoyo para el frontend. 
+    Cruza Postgres con Cassandra para mostrar la observación final.
+    """
+    print(f"\nRESUMEN DEL PEDIDO #{id_pedido}\n")
+    
+    try:
+        # 1. Traer datos básicos de Postgres
+        conn = get_postgres()
+        cur = conn.cursor()
+        cur.execute("SELECT total, fecha_hora FROM pedido WHERE id_pedido = %s", (id_pedido,))
+        datos_pg = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if not datos_pg:
+            print("El pedido no existe.")
+            return
+
+        print(f"Total: ${datos_pg[0]}")
+        print(f"Fecha de creación: {datos_pg[1]}")
+
+        # 2. Rescatar la observación final de Cassandra
+        from connections import get_cassandra
+        session = get_cassandra()
+        rows = list(session.execute("""
+            SELECT observacion 
+            FROM estado_pedido 
+            WHERE id_pedido = %s AND estado = 'entregado' 
+            ALLOW FILTERING
+        """, (id_pedido,)))
+
+        observacion_final = rows[0]["observacion"] if rows and rows[0]["observacion"] else "Sin observaciones"
+        print(f"Observación del Repartidor: {observacion_final}")
+
+    except Exception as e:
+        print(f"Error al cargar el resumen: {e}")
