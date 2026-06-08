@@ -23,6 +23,33 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showUsers, setShowUsers] = useState(false)
+
+  const TEST_USERS = {
+    admin: [{ nombre: 'Admin', email: 'admin', pwd: 'admin1234' }],
+    cliente: [
+      { nombre: 'Manuel Oliver', email: 'manu@test.com', pwd: 'test123' },
+      { nombre: 'Fiona Garcia', email: 'fiona@test.com', pwd: 'test123' },
+      { nombre: 'Lucho Perez', email: 'lucho@test.com', pwd: 'test123' },
+    ],
+    establecimiento: [
+      { nombre: 'Sushi Club', email: 'sushi@test.com', pwd: 'test123' },
+      { nombre: 'Burger King', email: 'bk@test.com', pwd: 'test123' },
+      { nombre: 'Farmacia Doc', email: 'farmacia@test.com', pwd: 'test123' },
+    ],
+    repartidor: [
+      { nombre: 'Juan Lopez', email: 'juan@test.com', pwd: 'test123' },
+      { nombre: 'Maria Gomez', email: 'maria@test.com', pwd: 'test123' },
+      { nombre: 'Carlos Diaz', email: 'carlos@test.com', pwd: 'test123' },
+    ],
+  }
+
+  const fillUser = (rolKey, user) => {
+    setRol(rolKey)
+    setEmail(user.email)
+    setPassword(user.pwd)
+    setError('')
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -132,12 +159,45 @@ export default function Login() {
         </div>
 
         {/* Test users info */}
-        <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-          <div className="text-xs text-gray-500 font-semibold mb-1">Usuarios de prueba (pwd: test123)</div>
-          <div className="text-xs text-gray-500">
-            Cliente: manu@test.com · Establecimiento: sushi@test.com · Repartidor: juan@test.com
-          </div>
-          <div className="text-xs text-gray-500 mt-1">Admin: usuario <strong>admin</strong> / pwd <strong>admin1234</strong></div>
+        <div className="mt-4 border border-gray-200 rounded-lg overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowUsers(v => !v)}
+            className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 text-xs font-semibold text-gray-500 hover:bg-gray-100 transition-colors"
+          >
+            <span>Usuarios de prueba</span>
+            <span className="text-gray-400">{showUsers ? '▲ ocultar' : '▼ ver todos'}</span>
+          </button>
+          {showUsers && (
+            <div className="bg-white border-t border-gray-200 divide-y divide-gray-100">
+              {[
+                { rolKey: 'admin',          label: '⚙️ Admin',           icon: null },
+                { rolKey: 'cliente',         label: '👤 Clientes',        icon: null },
+                { rolKey: 'establecimiento', label: '🏪 Establecimientos', icon: null },
+                { rolKey: 'repartidor',      label: '🛵 Repartidores',    icon: null },
+              ].map(({ rolKey, label }) => (
+                <div key={rolKey} className="px-3 py-2">
+                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">{label}</div>
+                  <div className="space-y-1">
+                    {TEST_USERS[rolKey].map(u => (
+                      <button
+                        key={u.email}
+                        type="button"
+                        onClick={() => fillUser(rolKey, u)}
+                        className="w-full flex items-center justify-between text-left px-2 py-1.5 rounded hover:bg-rappi/5 hover:text-rappi group transition-colors"
+                      >
+                        <span className="text-xs text-gray-700 group-hover:text-rappi font-medium">{u.nombre}</span>
+                        <span className="text-xs text-gray-400 font-mono group-hover:text-rappi/70">{u.email} · {u.pwd}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div className="px-3 py-1.5 bg-gray-50 text-center">
+                <span className="text-xs text-gray-400">Clic en un usuario para autocompletar el formulario</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Feature badges */}
