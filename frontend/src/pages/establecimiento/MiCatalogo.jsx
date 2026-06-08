@@ -50,6 +50,7 @@ export default function MiCatalogo() {
       setSuccess('Producto agregado correctamente')
       setShowModal(false)
       setForm(FORM_VACIO)
+      setPage(1)
       fetchCatalogo()
       setTimeout(() => setSuccess(''), 3000)
     } catch (err) {
@@ -89,6 +90,7 @@ export default function MiCatalogo() {
       setSuccess('Producto actualizado correctamente')
       setShowEditModal(false)
       setEditingId(null)
+      setPage(1)
       fetchCatalogo()
       setTimeout(() => setSuccess(''), 3000)
     } catch (err) {

@@ -3,7 +3,7 @@ import Layout from '../../components/Layout.jsx'
 import Badge from '../../components/Badge.jsx'
 import { getEstadoRepartidor, marcarDisponible, marcarOcupado, getPedidosRepartidor, tomarPedido, actualizarEstadoEntrega } from '../../api/repartidor.js'
 
-const ESTADOS_ENTREGA = ['en_camino', 'entregado']
+const ESTADOS_ENTREGA = ['repartidor_asignado', 'en_camino', 'entregado']
 
 export default function Dashboard() {
   const [estado, setEstado] = useState(null)
@@ -17,7 +17,13 @@ export default function Dashboard() {
 
   const fetchData = () => {
     Promise.all([getEstadoRepartidor(), getPedidosRepartidor()])
-      .then(([e, p]) => { setEstado(e); setPedidos(p) })
+      .then(([e, p]) => {
+        setEstado(e)
+        setPedidos(p)
+        const init = {}
+        p.asignados.forEach(ped => { init[ped.id_pedido] = ped.estado || 'en_camino' })
+        setEstadosEntrega(init)
+      })
       .catch(() => setError('Error cargando datos'))
       .finally(() => setLoading(false))
   }
@@ -137,10 +143,13 @@ export default function Dashboard() {
                     <div className="text-gray-400 text-sm">{p.establecimiento} · Cliente: {p.cliente}</div>
                     {p.direccion && <div className="text-gray-500 text-xs mt-0.5">📍 {p.direccion}</div>}
                     <div className="text-rappi font-bold text-sm mt-1">${parseFloat(p.total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
+                    {p.estado === 'entregado' && p.observacion && (
+                      <div className="text-gray-400 text-xs mt-1 italic">Obs: {p.observacion}</div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 ml-4">
                     <select
-                      value={estadosEntrega[p.id_pedido] || 'en_camino'}
+                      value={estadosEntrega[p.id_pedido] || p.estado || 'en_camino'}
                       onChange={e => setEstadosEntrega(prev => ({ ...prev, [p.id_pedido]: e.target.value }))}
                       className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none"
                     >

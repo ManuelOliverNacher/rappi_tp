@@ -11,7 +11,7 @@ from typing import Optional
 import bcrypt
 from fastapi import FastAPI, Header, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from connections import get_postgres, get_mongo, get_redis, get_cassandra, get_neo4j
 
@@ -109,9 +109,9 @@ class ConfirmarPedidoBody(BaseModel):
 
 class CalificarBody(BaseModel):
     id_pedido: int
-    puntaje_establecimiento: int
+    puntaje_establecimiento: int = Field(ge=1, le=5)
     comentario_est: Optional[str] = None
-    puntaje_repartidor: Optional[int] = None
+    puntaje_repartidor: Optional[int] = Field(default=None, ge=1, le=5)
     comentario_rep: Optional[str] = None
 
 class ProductoBody(BaseModel):
@@ -136,11 +136,11 @@ class EstadoBody(BaseModel):
     observacion: Optional[str] = None
 
 class PromocionBody(BaseModel):
-    codigo: str
-    descripcion: str
-    descuento: float
-    monto_minimo: Optional[float] = 0.0
-    dias: Optional[int] = 30
+    codigo: str = Field(min_length=1, max_length=20)
+    descripcion: str = Field(min_length=1, max_length=255)
+    descuento: float = Field(gt=0, le=100)
+    monto_minimo: Optional[float] = Field(default=0.0, ge=0)
+    dias: Optional[int] = Field(default=30, ge=1, le=365)
     condiciones: Optional[str] = None
 
 class ResponderBody(BaseModel):
@@ -861,8 +861,11 @@ def get_pedidos_est(user=Depends(_est_user)):
     cur = conn.cursor()
     try:
         cur.execute("""
-            SELECT p.id_pedido, p.fecha_hora, p.total, c.nombre, c.apellido
-            FROM pedido p JOIN cliente c ON p.id_cliente = c.id_cliente
+            SELECT p.id_pedido, p.fecha_hora, p.total, c.nombre, c.apellido,
+                   d.calle, d.numero, d.ciudad
+            FROM pedido p
+            JOIN cliente c ON p.id_cliente = c.id_cliente
+            LEFT JOIN direccion d ON d.id_cliente = p.id_cliente AND d.nro_direccion = p.id_cliente_dir
             WHERE p.id_establecimiento = %s ORDER BY p.fecha_hora DESC
         """, (user["id"],))
         pedidos = cur.fetchall()
@@ -872,7 +875,7 @@ def get_pedidos_est(user=Depends(_est_user)):
 
     session = get_cassandra()
     result = []
-    for id_p, fecha, total, nombre, apellido in pedidos:
+    for id_p, fecha, total, nombre, apellido, calle, num, ciudad in pedidos:
         estado = _get_estado_ultimo(session, id_p) or "desconocido"
         result.append({
             "id_pedido": id_p,
@@ -880,6 +883,7 @@ def get_pedidos_est(user=Depends(_est_user)):
             "total": float(total),
             "cliente": f"{nombre} {apellido or ''}".strip(),
             "estado": estado,
+            "direccion_entrega": f"{calle or ''} {num or ''}, {ciudad or ''}".strip(", ") or None,
         })
     return result
 
@@ -899,12 +903,26 @@ def cambiar_estado_pedido(id_pedido: int, body: EstadoBody, user=Depends(_est_us
 def get_calificaciones_est(user=Depends(_est_user)):
     db = get_mongo()
     califs = list(db.calificaciones.find({"id_establecimiento": user["id"]}))
+    ids_cliente = list({c.get("id_cliente") for c in califs if c.get("id_cliente")})
+    nombres = {}
+    if ids_cliente:
+        conn = get_postgres()
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT id_cliente, nombre, apellido FROM cliente WHERE id_cliente = ANY(%s)", (ids_cliente,))
+            for row in cur.fetchall():
+                nombres[row[0]] = f"{row[1]} {row[2] or ''}".strip()
+        finally:
+            cur.close()
+            conn.close()
     result = []
     for c in califs:
         ce = c.get("calificacion_establecimiento", {})
+        id_cli = c.get("id_cliente")
         result.append({
             "id": str(c["_id"]),
-            "id_cliente": c.get("id_cliente"),
+            "id_cliente": id_cli,
+            "nombre_cliente": nombres.get(id_cli, f"Cliente #{id_cli}"),
             "fecha": c.get("fecha"),
             "puntaje": ce.get("puntaje"),
             "comentario": ce.get("comentario"),
@@ -1044,12 +1062,17 @@ def get_pedidos_repartidor(user=Depends(_rep_user)):
     session = get_cassandra()
     asignados = []
     for id_p, fecha, total, est, cn, ca, calle, num, ciudad in mios:
-        estado = _get_estado_ultimo(session, id_p) or "?"
+        rows = list(session.execute(
+            "SELECT estado, observacion FROM estado_pedido WHERE id_pedido = %s LIMIT 1", (id_p,)
+        ))
+        estado = (rows[0]["estado"] if isinstance(rows[0], dict) else rows[0].estado) if rows else "?"
+        obs = (rows[0].get("observacion") if isinstance(rows[0], dict) else getattr(rows[0], "observacion", None)) if rows else None
         asignados.append({
             "id_pedido": id_p, "fecha_hora": fecha.isoformat(), "total": float(total),
             "establecimiento": est, "cliente": f"{cn} {ca or ''}".strip(),
             "direccion": f"{calle or ''} {num or ''}, {ciudad or ''}".strip(", "),
             "estado": estado,
+            "observacion": obs,
         })
 
     disponibles = []
@@ -1083,6 +1106,14 @@ def tomar_pedido(id_pedido: int, user=Depends(_rep_user)):
         finally:
             cur.close()
             conn.close()
+        conn2 = get_postgres()
+        cur2 = conn2.cursor()
+        try:
+            cur2.execute("UPDATE repartidor SET disponibilidad=false WHERE id_repartidor=%s", (user["id"],))
+            conn2.commit()
+        finally:
+            cur2.close()
+            conn2.close()
         session = get_cassandra()
         session.execute(
             "INSERT INTO estado_pedido (id_pedido,fecha_hora,estado,observacion) VALUES (%s,%s,%s,%s)",
@@ -1102,14 +1133,22 @@ def actualizar_estado_entrega(id_pedido: int, body: EstadoBody, user=Depends(_re
         (id_pedido, datetime.utcnow(), body.estado, body.observacion or None)
     )
     if body.estado == "entregado":
+        r = get_redis()
+        r.smove("repartidores:ocupados", "repartidores:disponibles", str(user["id"]))
+        conn = get_postgres()
+        cur = conn.cursor()
+        try:
+            cur.execute("UPDATE repartidor SET disponibilidad=true WHERE id_repartidor=%s", (user["id"],))
+            conn.commit()
+        finally:
+            cur.close()
+            conn.close()
         try:
             driver = get_neo4j()
-            r = get_redis()
             with driver.session() as ses:
                 ses.run("MERGE (r:Repartidor {id:$id}) SET r.nombre=$n", id=user["id"], n=user["nombre"])
                 ses.run("MATCH (r:Repartidor {id:$r}),(p:Pedido {id:$p}) MERGE (r)-[:ENTREGO]->(p)", r=user["id"], p=id_pedido)
             driver.close()
-            r.smove("repartidores:ocupados", "repartidores:disponibles", str(user["id"]))
         except Exception:
             pass
     return {"ok": True}
@@ -1119,11 +1158,26 @@ def actualizar_estado_entrega(id_pedido: int, body: EstadoBody, user=Depends(_re
 def get_calificaciones_rep(user=Depends(_rep_user)):
     db = get_mongo()
     califs = list(db.calificaciones.find({"id_repartidor": user["id"], "calificacion_repartidor": {"$exists": True}}))
+    ids_cliente = list({c.get("id_cliente") for c in califs if c.get("id_cliente")})
+    nombres = {}
+    if ids_cliente:
+        conn = get_postgres()
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT id_cliente, nombre, apellido FROM cliente WHERE id_cliente = ANY(%s)", (ids_cliente,))
+            for row in cur.fetchall():
+                nombres[row[0]] = f"{row[1]} {row[2] or ''}".strip()
+        finally:
+            cur.close()
+            conn.close()
     result = []
     for c in califs:
         cr = c.get("calificacion_repartidor", {})
+        id_cli = c.get("id_cliente")
         result.append({
             "id": str(c["_id"]),
+            "id_cliente": id_cli,
+            "nombre_cliente": nombres.get(id_cli, f"Cliente #{id_cli}"),
             "fecha": c.get("fecha"),
             "puntaje": cr.get("puntaje"),
             "comentario": cr.get("comentario"),
@@ -1162,7 +1216,7 @@ def verificar_conexiones(user=Depends(_admin_user)):
         result["mongodb"] = f"error: {str(e)[:80]}"
 
     try:
-        get_cassandra().execute("SELECT release_version FROM system.local")
+        get_cassandra().execute("SELECT id_pedido FROM estado_pedido LIMIT 1")
         result["cassandra"] = "ok"
     except Exception as e:
         result["cassandra"] = f"error: {str(e)[:80]}"
@@ -1327,7 +1381,7 @@ def reporte_rapidos(user=Depends(_admin_user)):
         cur.execute("""
             SELECT p.id_pedido, p.total, e.nombre, c.nombre, c.apellido
             FROM pedido p JOIN establecimiento e ON p.id_establecimiento=e.id_establecimiento
-            JOIN cliente c ON p.id_cliente=c.id_cliente WHERE p.total > 50 ORDER BY p.total DESC
+            JOIN cliente c ON p.id_cliente=c.id_cliente WHERE p.total > 5000 ORDER BY p.total DESC
         """)
         candidatos = cur.fetchall()
     finally:

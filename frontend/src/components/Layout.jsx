@@ -11,10 +11,14 @@ const MENU_ITEMS = {
   ],
   establecimiento: [
     { icon: '🍽️', label: 'Mi Catalogo', path: '/establishment/catalog' },
-    { icon: '📋', label: 'Pedidos', path: '/establishment/pedidos' },
+    { icon: '⏳', label: 'Pendientes', path: '/establishment/pendientes' },
+    { icon: '📋', label: 'Todos los Pedidos', path: '/establishment/pedidos' },
+    { icon: '⭐', label: 'Calificaciones', path: '/establishment/calificaciones' },
+    { icon: '🎟️', label: 'Promociones', path: '/establishment/promociones' },
   ],
   repartidor: [
     { icon: '🟢', label: 'Dashboard', path: '/delivery/dashboard' },
+    { icon: '⭐', label: 'Calificaciones', path: '/delivery/calificaciones' },
   ],
   admin: [
     { icon: '🔌', label: 'Sistema', path: '/admin/system' },
@@ -113,14 +117,6 @@ export default function Layout({ children }) {
             >
               ☰
             </button>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Buscar..."
-                className="bg-gray-700 text-gray-200 pl-9 pr-4 py-1.5 rounded-lg text-sm border border-gray-600 focus:outline-none focus:border-rappi w-64"
-              />
-              <span className="absolute left-3 top-2 text-gray-400 text-sm">🔍</span>
-            </div>
           </div>
           <div className="flex items-center gap-4">
             <button className="text-gray-400 hover:text-white text-xl">🔔</button>

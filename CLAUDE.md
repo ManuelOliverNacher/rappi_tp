@@ -12,7 +12,7 @@ Proyecto académico que simula una app de delivery conectada a **5 bases de dato
 | Neo4j        | Aura           | Grafo de relaciones (cliente→pedido→producto→local)|
 | Redis        | Redis Cloud    | Cache, sesiones, carrito, locks distribuidos        |
 
-Credenciales en `.env` (no commiteado). Cassandra requiere `secure-connect-rappi-db.zip` en la raíz.
+Credenciales en `.env` (no commiteado). Cassandra requiere `secure-connect-rappi-db.zip` en la raíz (no se usa actualmente — reemplazado por REST API).
 
 ## Estructura de archivos
 
@@ -23,7 +23,16 @@ rappi_tp/
 ├── api_server.py        # Backend FastAPI — expone toda la lógica como REST JSON
 ├── connections.py       # Fábrica de conexiones a las 5 bases
 ├── frontend/            # SPA React + Vite que consume api_server en :8000
-│   └── src/api/         # auth.js, cliente.js, establecimiento.js, repartidor.js, admin.js
+│   └── src/
+│       ├── api/         # auth.js, cliente.js, establecimiento.js, repartidor.js
+│       ├── components/  # Layout.jsx, Badge.jsx, StatCard.jsx
+│       └── pages/
+│           ├── Login.jsx
+│           ├── cliente/        # Catalog, Cart, Checkout, MisPedidos, Calificar
+│           ├── establecimiento/ # MiCatalogo, Pedidos, PedidosPendientes,
+│           │                    # Calificaciones, Promociones
+│           ├── repartidor/     # Dashboard, Calificaciones
+│           └── admin/          # System, Analytics
 ├── schema/
 │   ├── postgres_init.sql     # DDL completo con cascade deletes
 │   ├── cassandra_init.cql    # Tabla estado_pedido (clustered DESC)
@@ -48,19 +57,20 @@ rappi_tp/
 ## Esquema PostgreSQL (tablas principales)
 
 ```
-cliente(id_cliente PK, nombre, email, password_hash, telefono, ciudad)
-direccion(id_direccion PK, id_cliente FK, calle, numero, ciudad, provincia)
-establecimiento(id_establecimiento PK, nombre, email, password_hash, ciudad, tipo)
+cliente(id_cliente PK, nombre, apellido, email, password, telefono, ciudad)
+direccion(id_cliente FK, nro_direccion, calle, numero, ciudad, cp, alias)
+  PRIMARY KEY (id_cliente, nro_direccion)
+establecimiento(id_establecimiento PK, nombre, email, password, ciudad, tipo)
   → restaurante(id_establecimiento PK FK, tipo_cocina, horario)
   → tienda(id_establecimiento PK FK, categoria)
-repartidor(id_repartidor PK, nombre, email, password_hash, vehiculo, disponible)
+repartidor(id_repartidor PK, nombre, apellido, email, password, vehiculo, disponibilidad)
 pedido(id_pedido PK, id_cliente FK, id_establecimiento FK, id_repartidor FK,
-       estado, fecha_hora, total, tiempo_entrega_min, direccion_entrega)
-detalle_pedido(id_pedido FK, id_producto, nombre_producto, cantidad, precio_unitario)
-pago(id_pago PK, id_pedido FK, metodo, monto, estado, fecha_hora)
-promocion(id_promocion PK, id_establecimiento FK, codigo, descuento_porcentaje,
-          fecha_inicio, fecha_fin, uso_maximo, usos_actuales)
-promocion_pedido(id_pedido FK, id_promocion FK)
+       fecha_hora, total, id_cliente_dir FK)
+detalle_pedido(id_pedido FK, id_producto, cantidad, precio_unitario, subtotal)
+pago(id_pago PK, id_pedido FK, metodo, monto, estado, fecha)
+promocion(id_promocion PK, codigo UNIQUE, descripcion, descuento,
+          fecha_inicio, fecha_fin, monto_minimo, condiciones, creada_por)
+promocion_pedido(id_promocion FK, id_pedido FK)
 ```
 Índices en: `fecha_hora`, `id_cliente`, `id_establecimiento`, fechas de promociones.
 
@@ -68,24 +78,24 @@ promocion_pedido(id_pedido FK, id_promocion FK)
 
 Tabla única:
 ```cql
-estado_pedido(id_pedido UUID, fecha_hora TIMESTAMP, estado TEXT)
+estado_pedido(id_pedido INT, fecha_hora TIMESTAMP, estado TEXT, observacion TEXT)
 PRIMARY KEY (id_pedido, fecha_hora) WITH CLUSTERING ORDER BY (fecha_hora DESC)
 ```
-Se usa para el historial de transiciones de estado de cada pedido.
+Se usa para el historial de transiciones de estado de cada pedido. Clustering DESC permite obtener el estado más reciente en LIMIT 1.
 
 ## MongoDB (3 colecciones)
 
-- **catalogo**: `{ establecimiento_id, nombre, descripcion, precio, disponible, categoria, atributos:{} }`  
+- **catalogo_establecimientos**: `{ _id: id_establecimiento, nombre, tipo, catalogo: [{id_producto, nombre, precio, categoria, disponible, atributos:{}}] }`
   Atributos dinámicos según categoría (rolls, entrada, principal, postre, bebida, medicamento, etc.)
-- **calificaciones**: `{ id_pedido, id_cliente, id_establecimiento, id_repartidor, nota_establecimiento, nota_repartidor, comentario, respuesta_establecimiento, fecha }`
+- **calificaciones**: `{ _id, id_pedido, id_cliente, id_establecimiento, id_repartidor, calificacion_establecimiento:{puntaje, comentario, respuesta_establecimiento}, calificacion_repartidor:{puntaje, comentario}, fecha }`
 - **historial**: mirror de pedidos para consultas documentales
 
 ## Neo4j (nodos y relaciones)
 
-**Nodos**: `Cliente`, `Establecimiento`, `Repartidor`, `Pedido`, `Producto`  
+**Nodos**: `Cliente`, `Establecimiento`, `Repartidor`, `Pedido`, `Producto`
 **Relaciones**:
 - `(Cliente)-[:REALIZO]->(Pedido)`
-- `(Pedido)-[:CONTIENE]->(Producto)`
+- `(Pedido)-[:CONTIENE {cantidad}]->(Producto)`
 - `(Producto)-[:OFRECIDO_POR]->(Establecimiento)`
 - `(Repartidor)-[:ENTREGO]->(Pedido)`
 - `(Cliente)-[:CALIFICO {nota}]->(Establecimiento)`
@@ -95,25 +105,57 @@ Constraints en: `Cliente.id`, `Establecimiento.id`, `Producto.id`, `Pedido.id`, 
 
 ## Redis (patrones de uso)
 
-| Key pattern                        | Uso                                          |
-|------------------------------------|----------------------------------------------|
-| `session:{id_usuario}`             | Sesión activa (TTL 10 min)                   |
-| `carrito:{id_cliente}`             | Hash con productos del carrito               |
-| `catalogo:{id_establecimiento}`    | Cache del catálogo (JSON, TTL variable)      |
-| `promo:{codigo}`                   | Cache de promociones válidas                 |
-| `lock:pedido:{id_cliente}`         | Anti-double-click (NX + TTL corto)           |
-| `repartidores_disponibles`         | Set con IDs de repartidores libres           |
+| Key pattern                             | Tipo   | Uso                                          |
+|-----------------------------------------|--------|----------------------------------------------|
+| `session:{token}`                       | String | Sesión activa (TTL 10 min)                   |
+| `carrito:cliente:{id}`                  | Hash   | Productos del carrito + metadata promo       |
+| `catalogo:establecimiento:{id}`         | String | Cache del catálogo (JSON, TTL variable)      |
+| `promo:{codigo}`                        | String | Cache de promociones válidas                 |
+| `lock:pedido:{id_cliente}`              | String | Anti-double-click en confirmación (NX + EX 5)|
+| `lock:repartidor:asignacion:{id_pedido}`| String | Anti-doble-asignación de repartidor (NX + EX 5)|
+| `repartidores:disponibles`             | Set    | IDs de repartidores libres                   |
+| `repartidores:ocupados`                | Set    | IDs de repartidores con pedido activo        |
 
 ## Patrones arquitecturales clave
 
-1. **Operación confirmar pedido** (multi-DB atómica manual):  
-   PostgreSQL (pedido + detalle + pago) → Cassandra (estado "creado") → Neo4j (relaciones) → Redis (limpia carrito + lock)
+1. **Operación confirmar pedido** (multi-DB manual):
+   PostgreSQL (pedido + detalle + pago) → Cassandra (estado "creado") → Neo4j (relaciones grafo) → Redis (limpia carrito + libera lock)
 
-2. **Lock distribuido**: `SET lock:pedido:{id} NX EX 5` para evitar doble click en confirmación y doble asignación de repartidor.
+2. **Operación tomar pedido** (repartidor):
+   Redis (lock anti-duplicado) → PostgreSQL (asigna id_repartidor) → PostgreSQL (disponibilidad=false) → Cassandra (estado "repartidor_asignado") → Redis (mueve a set ocupados)
 
-3. **Cache-aside**: catálogos y promociones se guardan en Redis; se invalidan al modificar. Si Redis miss → busca en MongoDB/Postgres.
+3. **Operación entregar pedido**:
+   Cassandra (estado "entregado") → Redis (smove ocupados→disponibles) → PostgreSQL (disponibilidad=true) → Neo4j (relación ENTREGO)
 
-4. **Seed data** (`admin.py`): inserta 3 clientes, 3 establecimientos, 3 repartidores, 12 pedidos con estados variados, 2 promociones en todas las bases.
+4. **Lock distribuido**: `SET key NX EX 5` — si la clave ya existe, la operación falla. Previene doble confirmación y doble asignación.
+
+5. **Cache-aside**: catálogos y promociones se leen de Redis; si miss → MongoDB/Postgres. Se invalida al modificar.
+
+6. **Seed data** (`admin.py`): inserta 3 clientes, 3 establecimientos, 3 repartidores, 12 pedidos con estados variados en todas las bases simultáneamente.
+
+## Vistas del frontend (por rol)
+
+### Cliente
+- **Catálogos**: browse establecimientos y productos desde MongoDB
+- **Carrito**: hash en Redis, soporta código de descuento
+- **Checkout**: confirma pedido → operación multi-DB
+- **Mis Pedidos**: historial con estados desde Cassandra (expandible por pedido)
+- **Calificar**: rating 1–5 para establecimiento y repartidor → MongoDB + Neo4j
+
+### Establecimiento
+- **Mi Catálogo**: CRUD de productos en MongoDB (paginado)
+- **Pedidos Pendientes**: solo pedidos en estado "creado"
+- **Todos los Pedidos**: gestión de estados (aceptado → preparando → listo_para_retirar)
+- **Calificaciones**: reseñas recibidas con nombre del cliente, promedio, respuesta
+- **Promociones**: creación de códigos de descuento → PostgreSQL + Redis
+
+### Repartidor
+- **Dashboard**: disponibilidad, pedidos disponibles (listo_para_retirar), pedidos asignados con cambio de estado
+- **Calificaciones**: reseñas recibidas con nombre del cliente y promedio
+
+### Admin
+- **Sistema**: verificación de las 5 conexiones en tiempo real
+- **Analytics**: reportes desde PostgreSQL, MongoDB, Cassandra y Neo4j
 
 ## Cómo correr
 
@@ -121,7 +163,7 @@ Constraints en: `Cliente.id`, `Establecimiento.id`, `Producto.id`, `Pedido.id`, 
 cd rappi_tp
 python -m venv venv
 .\venv\Scripts\activate          # Windows
-pip install psycopg2-binary pymongo cassandra-driver neo4j redis python-dotenv streamlit fastapi uvicorn bcrypt
+pip install psycopg2-binary pymongo cassandra-driver neo4j redis python-dotenv streamlit fastapi uvicorn bcrypt pydantic
 python connections.py            # Verifica las 5 conexiones (debe mostrar 5 ✅)
 python main.py                   # CLI
 streamlit run app_web.py         # Web Streamlit
@@ -145,9 +187,10 @@ POSTGRES_PORT=5432
 MONGO_URI=mongodb+srv://...
 
 # Cassandra (Astra DB)
-CASSANDRA_CLIENT_ID=...
-CASSANDRA_CLIENT_SECRET=...
-# + secure-connect-rappi-db.zip en la raíz del proyecto
+ASTRA_TOKEN=...
+ASTRA_DB_ID=...
+ASTRA_REGION=...
+# secure-connect-rappi-db.zip en la raíz (no se usa, reemplazado por REST)
 
 # Neo4j Aura
 NEO4J_URI=neo4j+s://...
@@ -165,18 +208,27 @@ REDIS_PASSWORD=...
 ### Cassandra — AstraRestSession (REST API en lugar de CQL nativo)
 Astra DB Serverless usa protocolo DSE que `cassandra-driver` 3.x no soporta. Se implementó `AstraRestSession` en `connections.py`:
 - Misma interfaz que `cassandra.cluster.Session`: `session.execute(cql, params)`
-- **SELECT**: usa path-based URL `/keyspaces/rappi/{table}/{id_pedido}` — la forma correcta para buscar por partition key en Astra REST v2. Aplica sort por `fecha_hora DESC` y LIMIT en Python para respetar el clustering order de Cassandra.
+- **SELECT**: usa path-based URL `/keyspaces/rappi/{table}/{id_pedido}`. Aplica sort por `fecha_hora DESC` y LIMIT en Python.
 - **INSERT**: serializa datetimes con `.isoformat() + "Z"` (Astra requiere UTC explícito), y `None` como `null` JSON.
 - **TRUNCATE**: elimina todas las filas vía DELETE iterativo.
+- **Health check**: usa `SELECT id_pedido FROM estado_pedido LIMIT 1` (no `system.local`).
 
 **Estado actual**: PostgreSQL ✅ MongoDB ✅ Neo4j ✅ Redis ✅ Cassandra ✅ (REST API)
 
-**Endpoint REST**: `https://2e7d5d41-c9b7-45c0-8218-d63ca04c4471-us-east-2.apps.astra.datastax.com/api/rest/v2`  
+**Endpoint REST**: `https://{ASTRA_DB_ID}-{ASTRA_REGION}.apps.astra.datastax.com/api/rest/v2`
 **Auth**: header `X-Cassandra-Token` con `ASTRA_TOKEN` del `.env`
 
 ### Rows de Cassandra son dicts
-`AstraRestSession` devuelve dicts crudos del JSON de la API REST. Todo el código en `use_cases/` que antes usaba acceso por atributo (`row.estado`, `row.fecha_hora`) fue migrado a acceso por clave (`row["estado"]`, `row.get("fecha_hora")`).
+`AstraRestSession` devuelve dicts crudos del JSON de la API REST. El código accede por clave: `row["estado"]`, `row.get("observacion")`.
+
+### Validaciones Pydantic
+Los modelos usan `from pydantic import BaseModel, Field`:
+- `CalificarBody.puntaje_*`: `Field(ge=1, le=5)` — solo acepta 1 a 5
+- `PromocionBody.codigo`: `Field(max_length=20)`, `.descuento`: `Field(gt=0, le=100)`
+
+### Seguridad de rutas (frontend)
+`ProtectedRoute` en `router.jsx` valida sesión Y rol. Un usuario autenticado con rol incorrecto es redirigido a su home (`/catalog`, `/establishment/catalog`, etc.) en lugar de ver una página rota.
 
 ### Otros
-- `bcrypt` se usa para hashing de passwords en `auth.py` y `api_server.py`.
-- `secure-connect-rappi-db.zip` puede estar en la raíz pero no se usa (el driver nativo fue reemplazado por REST).
+- `bcrypt` se usa para hashing de passwords.
+- Passwords: mínimo implícito por bcrypt; validación de rango en ratings y promociones via Pydantic Field.

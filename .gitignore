@@ -33,3 +33,6 @@ frontend/.env
 
 # Claude Code (configuracion personal del IDE)
 .claude/
+
+# Documentacion de exposicion (uso personal)
+EXPOSICION.md

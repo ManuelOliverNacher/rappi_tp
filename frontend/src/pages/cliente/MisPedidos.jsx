@@ -26,7 +26,11 @@ export default function MisPedidos() {
     try {
       const rows = await getEstadosPedido(id_pedido)
       setEstados(p => ({ ...p, [id_pedido]: rows }))
-    } catch {}
+    } catch {
+      setEstados(p => ({ ...p, [id_pedido]: [] }))
+      setError('No se pudo cargar el historial de estados')
+      setTimeout(() => setError(''), 4000)
+    }
     setLoadingEstados(p => ({ ...p, [id_pedido]: false }))
   }
 

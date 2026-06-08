@@ -3,23 +3,17 @@ import Layout from '../../components/Layout.jsx'
 import Badge from '../../components/Badge.jsx'
 import { getPedidosEst, cambiarEstadoPedido } from '../../api/establecimiento.js'
 
-const ESTADOS_OPCIONES = ['creado', 'aceptado', 'preparando', 'listo_para_retirar', 'repartidor_asignado', 'en_camino', 'entregado', 'cancelado']
-
-export default function Pedidos() {
+export default function PedidosPendientes() {
   const [pedidos, setPedidos] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [nuevosEstados, setNuevosEstados] = useState({})
   const [observaciones, setObservaciones] = useState({})
   const [updating, setUpdating] = useState({})
 
   const loadPedidos = () =>
     getPedidosEst().then(data => {
-      setPedidos(data)
-      const init = {}
-      data.forEach(p => { init[p.id_pedido] = p.estado || 'aceptado' })
-      setNuevosEstados(init)
+      setPedidos(data.filter(p => p.estado?.toLowerCase() === 'creado'))
     })
 
   useEffect(() => {
@@ -28,35 +22,50 @@ export default function Pedidos() {
       .finally(() => setLoading(false))
   }, [])
 
-  const handleCambiarEstado = async (id_pedido) => {
+  const handleAceptar = async (id_pedido) => {
     setUpdating(p => ({ ...p, [id_pedido]: true }))
     try {
-      await cambiarEstadoPedido(id_pedido, nuevosEstados[id_pedido], observaciones[id_pedido] || null)
-      setSuccess(`Estado actualizado para pedido #${id_pedido}`)
+      await cambiarEstadoPedido(id_pedido, 'aceptado', observaciones[id_pedido] || null)
+      setSuccess(`Pedido #${id_pedido} aceptado`)
       loadPedidos().catch(() => {})
       setTimeout(() => setSuccess(''), 3000)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Error actualizando estado')
+      setError(err.response?.data?.detail || 'Error al aceptar pedido')
       setTimeout(() => setError(''), 4000)
     } finally {
       setUpdating(p => ({ ...p, [id_pedido]: false }))
     }
   }
 
+  const handleRechazar = async (id_pedido) => {
+    setUpdating(p => ({ ...p, [`${id_pedido}_r`]: true }))
+    try {
+      await cambiarEstadoPedido(id_pedido, 'cancelado', observaciones[id_pedido] || null)
+      setSuccess(`Pedido #${id_pedido} cancelado`)
+      loadPedidos().catch(() => {})
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Error al cancelar pedido')
+      setTimeout(() => setError(''), 4000)
+    } finally {
+      setUpdating(p => ({ ...p, [`${id_pedido}_r`]: false }))
+    }
+  }
+
   return (
     <Layout>
-      <h1 className="text-2xl font-bold text-white mb-6">Pedidos Recibidos</h1>
+      <h1 className="text-2xl font-bold text-white mb-6">Pedidos Pendientes</h1>
       {error && <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg mb-4 text-sm">{error}</div>}
       {success && <div className="bg-green-900/50 border border-green-700 text-green-300 px-4 py-3 rounded-lg mb-4 text-sm">{success}</div>}
 
       {loading ? (
         <div className="text-gray-400">Cargando pedidos...</div>
       ) : pedidos.length === 0 ? (
-        <div className="text-gray-400 text-center py-16">No hay pedidos todavia.</div>
+        <div className="text-gray-400 text-center py-16">No hay pedidos pendientes.</div>
       ) : (
         <div className="space-y-3">
           {pedidos.map(p => (
-            <div key={p.id_pedido} className="bg-sidebar border border-gray-700 rounded-xl p-5">
+            <div key={p.id_pedido} className="bg-sidebar border border-blue-700/50 rounded-xl p-5">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-1">
@@ -68,17 +77,11 @@ export default function Pedidos() {
                     {new Date(p.fecha_hora).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
                   </div>
                   <div className="text-rappi font-bold mt-1">${parseFloat(p.total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
+                  {p.direccion_entrega && (
+                    <div className="text-gray-500 text-xs mt-1">Entrega: {p.direccion_entrega}</div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 ml-4">
-                  <select
-                    value={nuevosEstados[p.id_pedido] || p.estado || 'creado'}
-                    onChange={e => setNuevosEstados(prev => ({ ...prev, [p.id_pedido]: e.target.value }))}
-                    className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-rappi"
-                  >
-                    {ESTADOS_OPCIONES.map(s => (
-                      <option key={s} value={s}>{s.replace(/_/g, ' ').toUpperCase()}</option>
-                    ))}
-                  </select>
                   <input
                     placeholder="Observacion..."
                     value={observaciones[p.id_pedido] || ''}
@@ -86,11 +89,18 @@ export default function Pedidos() {
                     className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-rappi w-36"
                   />
                   <button
-                    onClick={() => handleCambiarEstado(p.id_pedido)}
+                    onClick={() => handleAceptar(p.id_pedido)}
                     disabled={updating[p.id_pedido]}
-                    className="bg-rappi hover:bg-rappi-dark text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-60"
+                    className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-60"
                   >
-                    {updating[p.id_pedido] ? '...' : 'Actualizar'}
+                    {updating[p.id_pedido] ? '...' : 'Aceptar'}
+                  </button>
+                  <button
+                    onClick={() => handleRechazar(p.id_pedido)}
+                    disabled={updating[`${p.id_pedido}_r`]}
+                    className="bg-red-800 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-60"
+                  >
+                    {updating[`${p.id_pedido}_r`] ? '...' : 'Cancelar'}
                   </button>
                 </div>
               </div>
