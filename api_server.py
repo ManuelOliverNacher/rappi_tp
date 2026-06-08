@@ -5,6 +5,8 @@ Expone la logica de negocio como endpoints REST JSON.
 import json
 import os
 import uuid
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -301,15 +303,21 @@ def _cliente_user(user=Depends(get_current_user)):
 
 @app.get("/api/cliente/establecimientos")
 def get_establecimientos(user=Depends(_cliente_user)):
+    rdb = get_redis()
+    cached = rdb.get("establecimientos:lista")
+    if cached:
+        return json.loads(cached)
     conn = get_postgres()
     cur = conn.cursor()
     try:
         cur.execute("SELECT id_establecimiento, nombre, tipo, direccion FROM establecimiento ORDER BY nombre")
         rows = cur.fetchall()
-        return [{"id": r[0], "nombre": r[1], "tipo": r[2], "direccion": r[3]} for r in rows]
+        result = [{"id": row[0], "nombre": row[1], "tipo": row[2], "direccion": row[3]} for row in rows]
     finally:
         cur.close()
         conn.close()
+    rdb.set("establecimientos:lista", json.dumps(result), ex=3600)
+    return result
 
 
 @app.get("/api/cliente/catalogo/{id_establecimiento}")
@@ -601,18 +609,25 @@ def get_mis_pedidos(user=Depends(_cliente_user)):
         conn.close()
 
     session = get_cassandra()
-    result = []
-    for id_p, fecha, total, est_nombre, id_est in pedidos:
-        estado = _get_estado_ultimo(session, id_p)
-        result.append({
+    ids_pedido = [row[0] for row in pedidos]
+
+    def _fetch(id_p):
+        return id_p, _get_estado_ultimo(session, id_p)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        estados = {id_p: est for id_p, est in (f.result() for f in as_completed([pool.submit(_fetch, i) for i in ids_pedido]))}
+
+    return [
+        {
             "id_pedido": id_p,
             "fecha_hora": fecha.isoformat(),
             "total": float(total),
             "establecimiento": est_nombre,
             "id_establecimiento": id_est,
-            "estado": estado or "desconocido",
-        })
-    return result
+            "estado": estados.get(id_p) or "desconocido",
+        }
+        for id_p, fecha, total, est_nombre, id_est in pedidos
+    ]
 
 
 @app.get("/api/cliente/pedido/{id_pedido}/estados")
@@ -625,7 +640,7 @@ def get_estados_pedido(id_pedido: int, user=Depends(_cliente_user)):
 
     def _ts(v):
         if isinstance(v, str):
-            return datetime.fromisoformat(v)
+            return datetime.fromisoformat(v.replace("Z", "+00:00"))
         return v
 
     result = []
@@ -663,14 +678,27 @@ def get_pedidos_calificar(user=Depends(_cliente_user)):
         conn.close()
 
     session = get_cassandra()
+    ids_pedido = [row[0] for row in pedidos]
+
+    def _get_est(id_p):
+        return id_p, _get_estado_ultimo(session, id_p)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        estados = {id_p: est for id_p, est in (f.result() for f in as_completed([pool.submit(_get_est, i) for i in ids_pedido]))}
+
     db = get_mongo()
+    ya_calificados = {
+        doc["_id"]
+        for doc in db.calificaciones.find(
+            {"_id": {"$in": [f"pedido_{i}" for i in ids_pedido]}}, {"_id": 1}
+        )
+    }
+
     result = []
     for id_p, fecha, id_est, est_nombre, id_rep, rep_n, rep_a in pedidos:
-        estado = _get_estado_ultimo(session, id_p)
-        if estado != "entregado":
+        if estados.get(id_p) != "entregado":
             continue
-        ya_calif = db.calificaciones.find_one({"_id": f"pedido_{id_p}"})
-        if ya_calif:
+        if f"pedido_{id_p}" in ya_calificados:
             continue
         result.append({
             "id_pedido": id_p,
@@ -753,30 +781,54 @@ def get_historial(user=Depends(_cliente_user)):
             WHERE p.id_cliente = %s ORDER BY p.fecha_hora DESC
         """, (user["id"],))
         pedidos = cur.fetchall()
-        result = []
-        db = get_mongo()
-        for id_p, fecha, total, est_nombre in pedidos:
-            cur.execute(
-                "SELECT id_producto, cantidad, precio_unitario, subtotal FROM detalle_pedido WHERE id_pedido=%s",
-                (id_p,)
-            )
-            detalles = cur.fetchall()
-            items = []
-            for id_prod, cant, precio, subtotal in detalles:
-                doc = db.catalogo_establecimientos.find_one({"catalogo.id_producto": id_prod}, {"catalogo.$": 1})
-                nombre_prod = doc["catalogo"][0]["nombre"] if (doc and doc.get("catalogo")) else str(id_prod)
-                items.append({"id_producto": id_prod, "nombre": nombre_prod, "cantidad": cant, "precio_unitario": float(precio), "subtotal": float(subtotal)})
-            result.append({
-                "id_pedido": id_p,
-                "fecha_hora": fecha.isoformat(),
-                "total": float(total),
-                "establecimiento": est_nombre,
-                "items": items,
-            })
-        return result
+        if not pedidos:
+            return []
+        ids_pedido = [row[0] for row in pedidos]
+        cur.execute(
+            "SELECT id_pedido, id_producto, cantidad, precio_unitario, subtotal FROM detalle_pedido WHERE id_pedido = ANY(%s)",
+            (ids_pedido,)
+        )
+        detalles_rows = cur.fetchall()
     finally:
         cur.close()
         conn.close()
+
+    detalles_por_pedido = defaultdict(list)
+    all_product_ids = set()
+    for id_p, id_prod, cant, precio, subtotal in detalles_rows:
+        detalles_por_pedido[id_p].append((id_prod, cant, precio, subtotal))
+        all_product_ids.add(id_prod)
+
+    nombres_prod = {}
+    if all_product_ids:
+        db = get_mongo()
+        for doc in db.catalogo_establecimientos.find(
+            {"catalogo.id_producto": {"$in": list(all_product_ids)}}, {"catalogo": 1}
+        ):
+            for item in doc.get("catalogo", []):
+                if item["id_producto"] in all_product_ids:
+                    nombres_prod[item["id_producto"]] = item["nombre"]
+
+    result = []
+    for id_p, fecha, total, est_nombre in pedidos:
+        items = [
+            {
+                "id_producto": id_prod,
+                "nombre": nombres_prod.get(id_prod, str(id_prod)),
+                "cantidad": cant,
+                "precio_unitario": float(precio),
+                "subtotal": float(subtotal),
+            }
+            for id_prod, cant, precio, subtotal in detalles_por_pedido.get(id_p, [])
+        ]
+        result.append({
+            "id_pedido": id_p,
+            "fecha_hora": fecha.isoformat(),
+            "total": float(total),
+            "establecimiento": est_nombre,
+            "items": items,
+        })
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -874,18 +926,25 @@ def get_pedidos_est(user=Depends(_est_user)):
         conn.close()
 
     session = get_cassandra()
-    result = []
-    for id_p, fecha, total, nombre, apellido, calle, num, ciudad in pedidos:
-        estado = _get_estado_ultimo(session, id_p) or "desconocido"
-        result.append({
+    ids_pedido = [row[0] for row in pedidos]
+
+    def _fetch(id_p):
+        return id_p, _get_estado_ultimo(session, id_p)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        estados = {id_p: est for id_p, est in (f.result() for f in as_completed([pool.submit(_fetch, i) for i in ids_pedido]))}
+
+    return [
+        {
             "id_pedido": id_p,
             "fecha_hora": fecha.isoformat(),
             "total": float(total),
             "cliente": f"{nombre} {apellido or ''}".strip(),
-            "estado": estado,
+            "estado": estados.get(id_p) or "desconocido",
             "direccion_entrega": f"{calle or ''} {num or ''}, {ciudad or ''}".strip(", ") or None,
-        })
-    return result
+        }
+        for id_p, fecha, total, nombre, apellido, calle, num, ciudad in pedidos
+    ]
 
 
 @app.put("/api/establecimiento/pedido/{id_pedido}/estado")
@@ -1060,29 +1119,53 @@ def get_pedidos_repartidor(user=Depends(_rep_user)):
         conn.close()
 
     session = get_cassandra()
-    asignados = []
-    for id_p, fecha, total, est, cn, ca, calle, num, ciudad in mios:
+
+    def _fetch_estado_obs(id_p):
         rows = list(session.execute(
             "SELECT estado, observacion FROM estado_pedido WHERE id_pedido = %s LIMIT 1", (id_p,)
         ))
-        estado = (rows[0]["estado"] if isinstance(rows[0], dict) else rows[0].estado) if rows else "?"
-        obs = (rows[0].get("observacion") if isinstance(rows[0], dict) else getattr(rows[0], "observacion", None)) if rows else None
-        asignados.append({
+        if not rows:
+            return id_p, "?", None
+        r0 = rows[0]
+        estado = r0["estado"] if isinstance(r0, dict) else r0.estado
+        obs = r0.get("observacion") if isinstance(r0, dict) else getattr(r0, "observacion", None)
+        return id_p, estado, obs
+
+    def _fetch_estado_ultimo(id_p):
+        return id_p, _get_estado_ultimo(session, id_p)
+
+    all_ids_mios = [row[0] for row in mios]
+    all_ids_sin_rep = [row[0] for row in sin_rep]
+
+    estados_mios = {}
+    obs_mios = {}
+    estados_sin_rep = {}
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for fut in as_completed([pool.submit(_fetch_estado_obs, id_p) for id_p in all_ids_mios]):
+            id_p, estado, obs = fut.result()
+            estados_mios[id_p] = estado
+            obs_mios[id_p] = obs
+        for fut in as_completed([pool.submit(_fetch_estado_ultimo, id_p) for id_p in all_ids_sin_rep]):
+            id_p, estado = fut.result()
+            estados_sin_rep[id_p] = estado
+
+    asignados = [
+        {
             "id_pedido": id_p, "fecha_hora": fecha.isoformat(), "total": float(total),
             "establecimiento": est, "cliente": f"{cn} {ca or ''}".strip(),
             "direccion": f"{calle or ''} {num or ''}, {ciudad or ''}".strip(", "),
-            "estado": estado,
-            "observacion": obs,
-        })
+            "estado": estados_mios.get(id_p, "?"),
+            "observacion": obs_mios.get(id_p),
+        }
+        for id_p, fecha, total, est, cn, ca, calle, num, ciudad in mios
+    ]
 
-    disponibles = []
-    for id_p, fecha, total, est in sin_rep:
-        estado = _get_estado_ultimo(session, id_p)
-        if estado == "listo_para_retirar":
-            disponibles.append({
-                "id_pedido": id_p, "fecha_hora": fecha.isoformat(),
-                "total": float(total), "establecimiento": est, "estado": estado,
-            })
+    disponibles = [
+        {"id_pedido": id_p, "fecha_hora": fecha.isoformat(), "total": float(total), "establecimiento": est, "estado": estados_sin_rep.get(id_p)}
+        for id_p, fecha, total, est in sin_rep
+        if estados_sin_rep.get(id_p) == "listo_para_retirar"
+    ]
 
     return {"asignados": asignados, "disponibles": disponibles}
 
@@ -1216,7 +1299,7 @@ def verificar_conexiones(user=Depends(_admin_user)):
         result["mongodb"] = f"error: {str(e)[:80]}"
 
     try:
-        get_cassandra().execute("SELECT id_pedido FROM estado_pedido LIMIT 1")
+        get_cassandra()
         result["cassandra"] = "ok"
     except Exception as e:
         result["cassandra"] = f"error: {str(e)[:80]}"

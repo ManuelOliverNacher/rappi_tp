@@ -30,10 +30,13 @@ export default function Cart() {
   }
 
   const handleQuitar = async (id_producto) => {
+    setCarrito(prev => prev ? { ...prev, items: prev.items.filter(i => i.id_producto !== id_producto) } : prev)
     try {
       await quitarItemCarrito(id_producto)
+    } catch {
+      setError('Error al quitar item')
       fetchCarrito()
-    } catch { setError('Error al quitar item') }
+    }
   }
 
   const handlePromo = async () => {
@@ -53,6 +56,10 @@ export default function Cart() {
       await handleQuitar(item.id_producto)
       return
     }
+    setCarrito(prev => prev ? {
+      ...prev,
+      items: prev.items.map(i => i.id_producto === item.id_producto ? { ...i, cantidad: nuevaCant } : i)
+    } : prev)
     try {
       if (!carrito) return
       await agregarAlCarrito({
@@ -63,9 +70,9 @@ export default function Cart() {
         precio: item.precio,
         cantidad: delta,
       })
-      fetchCarrito()
     } catch (err) {
       setError(err.response?.data?.detail || 'Error actualizando cantidad')
+      fetchCarrito()
     }
   }
 

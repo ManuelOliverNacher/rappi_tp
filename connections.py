@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import psycopg2
+import psycopg2.pool
 from pymongo import MongoClient
 from neo4j import GraphDatabase
 import redis
@@ -147,15 +148,47 @@ class _FakeResult:
         return self._rows
 
 
+_pg_pool = None
+_mongo_client = None
+_redis_client = None
+
+
+class _PooledConn:
+    """Wrapper sobre psycopg2 connection que devuelve la conexión al pool en vez de cerrarla."""
+    def __init__(self, pool, conn):
+        self._pool = pool
+        self._conn = conn
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def close(self):
+        self._pool.putconn(self._conn)
+
+    def cursor(self, *args, **kwargs):
+        return self._conn.cursor(*args, **kwargs)
+
+    def commit(self):
+        return self._conn.commit()
+
+    def rollback(self):
+        return self._conn.rollback()
+
+
 def get_postgres():
-    conn = psycopg2.connect(os.getenv("PG_CONNECTION_STRING"))
-    return conn
+    global _pg_pool
+    if _pg_pool is None:
+        _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+            1, 5, dsn=os.getenv("PG_CONNECTION_STRING")
+        )
+    return _PooledConn(_pg_pool, _pg_pool.getconn())
 
 
 def get_mongo():
-    client = MongoClient(os.getenv("MONGO_CONNECTION_STRING"))
-    db = client[os.getenv("MONGO_DATABASE")]
-    return db
+    global _mongo_client
+    if _mongo_client is None:
+        _mongo_client = MongoClient(os.getenv("MONGO_CONNECTION_STRING"))
+    return _mongo_client[os.getenv("MONGO_DATABASE")]
 
 
 def get_cassandra():
@@ -180,13 +213,15 @@ def get_neo4j():
 
 
 def get_redis():
-    r = redis.Redis(
-        host=os.getenv("REDIS_HOST"),
-        port=int(os.getenv("REDIS_PORT")),
-        password=os.getenv("REDIS_PASSWORD"),
-        decode_responses=True
-    )
-    return r
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = redis.Redis(
+            host=os.getenv("REDIS_HOST"),
+            port=int(os.getenv("REDIS_PORT")),
+            password=os.getenv("REDIS_PASSWORD"),
+            decode_responses=True,
+        )
+    return _redis_client
 
 
 def check_all_connections():
