@@ -187,6 +187,9 @@ def tomar_pedido(repartidor, id_pedido):
             cur.execute("""
                 UPDATE pedido SET id_repartidor = %s WHERE id_pedido = %s
             """, (repartidor["id"], id_pedido))
+            cur.execute("""
+                UPDATE repartidor SET disponibilidad = false WHERE id_repartidor = %s
+            """, (repartidor["id"],))
             conn.commit()
         except Exception as e:
             conn.rollback()
@@ -306,8 +309,18 @@ def actualizar_estado_entrega(repartidor):
         VALUES (%s, %s, %s, %s)
     """, (id_pedido_sel, datetime.utcnow(), nuevo_estado_db, observacion or None))
 
-    # Si entrego, crear relacion en Neo4j y liberar al repartidor
+    # Si entrego, liberar al repartidor y actualizar Neo4j
     if nuevo_estado_db == "entregado":
+        r_conn = get_redis()
+        r_conn.smove("repartidores:ocupados", "repartidores:disponibles", str(repartidor["id"]))
+        conn2 = get_postgres()
+        cur2 = conn2.cursor()
+        try:
+            cur2.execute("UPDATE repartidor SET disponibilidad = true WHERE id_repartidor = %s", (repartidor["id"],))
+            conn2.commit()
+        finally:
+            cur2.close()
+            conn2.close()
         try:
             from connections import get_neo4j
             driver = get_neo4j()
@@ -316,18 +329,13 @@ def actualizar_estado_entrega(repartidor):
                     MERGE (r:Repartidor {id: $id_r})
                     SET r.nombre = $nombre
                 """, id_r=repartidor["id"], nombre=repartidor["nombre"])
-
                 ses.run("""
                     MATCH (r:Repartidor {id: $id_r}), (p:Pedido {id: $id_p})
                     MERGE (r)-[:ENTREGO]->(p)
                 """, id_r=repartidor["id"], id_p=id_pedido_sel)
             driver.close()
-
-            # Liberar al repartidor (vuelve a disponibles)
-            r_conn = get_redis()
-            r_conn.smove("repartidores:ocupados", "repartidores:disponibles", str(repartidor["id"]))
         except Exception as e:
-            print(f"\n(Aviso: {e})")
+            print(f"\n(Aviso Neo4j: {e})")
 
     print(f"\nEstado actualizado: pedido #{id_pedido_sel} -> {nuevo_estado_visual.upper()}")
     input("\nPresione Enter para continuar...")
