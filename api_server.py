@@ -1299,7 +1299,7 @@ def verificar_conexiones(user=Depends(_admin_user)):
         result["mongodb"] = f"error: {str(e)[:80]}"
 
     try:
-        get_cassandra()
+        get_cassandra().ping()
         result["cassandra"] = "ok"
     except Exception as e:
         result["cassandra"] = f"error: {str(e)[:80]}"

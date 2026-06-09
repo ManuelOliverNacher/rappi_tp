@@ -28,6 +28,15 @@ class AstraRestSession:
         }
         self.keyspace = keyspace
 
+    def ping(self):
+        r = requests.get(
+            f"{self.base}/schemas/keyspaces/{self.keyspace}",
+            headers=self.headers,
+            timeout=10,
+        )
+        if r.status_code not in (200, 404):
+            raise Exception(f"Astra ping failed {r.status_code}: {r.text[:80]}")
+
     def execute(self, query, parameters=None):
         query = query.strip()
         params = list(parameters) if parameters else []
@@ -163,6 +172,10 @@ class _PooledConn:
         return getattr(self._conn, name)
 
     def close(self):
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
         self._pool.putconn(self._conn)
 
     def cursor(self, *args, **kwargs):
