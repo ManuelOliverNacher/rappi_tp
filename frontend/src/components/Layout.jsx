@@ -119,8 +119,6 @@ export default function Layout({ children }) {
             </button>
           </div>
           <div className="flex items-center gap-4">
-            <button className="text-gray-400 hover:text-white text-xl">🔔</button>
-            <button className="text-gray-400 hover:text-white text-xl">❓</button>
             {user && (
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-rappi rounded-full flex items-center justify-center text-white text-sm font-bold">

@@ -1,6 +1,7 @@
 import React from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login.jsx'
+import Register from './pages/Register.jsx'
 import Catalog from './pages/cliente/Catalog.jsx'
 import Cart from './pages/cliente/Cart.jsx'
 import Checkout from './pages/cliente/Checkout.jsx'
@@ -38,6 +39,7 @@ export default function Router() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
       <Route path="/catalog" element={<ProtectedRoute rol="cliente"><Catalog /></ProtectedRoute>} />
       <Route path="/carrito" element={<ProtectedRoute rol="cliente"><Cart /></ProtectedRoute>} />
       <Route path="/checkout" element={<ProtectedRoute rol="cliente"><Checkout /></ProtectedRoute>} />

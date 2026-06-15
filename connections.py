@@ -220,7 +220,9 @@ def get_neo4j():
         uri = uri.replace("neo4j+s://", "neo4j+ssc://")
     driver = GraphDatabase.driver(
         uri,
-        auth=(os.getenv("NEO4J_USER"), os.getenv("NEO4J_PASSWORD"))
+        auth=(os.getenv("NEO4J_USER"), os.getenv("NEO4J_PASSWORD")),
+        connection_timeout=5,
+        max_connection_lifetime=60,
     )
     return driver
 

@@ -217,10 +217,79 @@ def ver_mi_catalogo(establecimiento):
 
 
 # ============================================
-# PLACEHOLDERS (lo demas viene despues)
+# ACTUALIZAR PRODUCTO EN EL CATALOGO (Mongo)
 # ============================================
 def actualizar_producto(establecimiento):
-    print("Actualizar producto - Aun no implementado")
+    print(f"\nACTUALIZAR PRODUCTO\n")
+
+    db = get_mongo()
+    id_est = establecimiento["id"]
+    doc = db.catalogo_establecimientos.find_one({"_id": id_est})
+
+    if not doc or not doc.get("catalogo"):
+        print("Todavia no tenes productos en el catalogo.")
+        input("\nPresione Enter para continuar...")
+        return
+
+    print("Productos en tu catalogo:\n")
+    for prod in doc["catalogo"]:
+        disp = "DISPONIBLE" if prod.get("disponible", True) else "NO DISPONIBLE"
+        print(f"  [{prod['id_producto']}]  {prod['nombre']}  -  ${prod['precio']}  -  {disp}")
+    print()
+
+    id_prod = input("Ingresa el ID del producto a modificar (o Enter para cancelar): ").strip()
+    if not id_prod:
+        return
+
+    producto = next((p for p in doc["catalogo"] if p["id_producto"] == id_prod), None)
+    if not producto:
+        print("No se encontro un producto con ese ID.")
+        input("\nPresione Enter para continuar...")
+        return
+
+    print(f"\nProducto seleccionado: {producto['nombre']}")
+    print("Deja en blanco los campos que no quieras cambiar.\n")
+
+    cambios = {}
+
+    nuevo_nombre = input(f"  Nombre [{producto['nombre']}]: ").strip()
+    if nuevo_nombre:
+        cambios["catalogo.$.nombre"] = nuevo_nombre
+
+    precio_str = input(f"  Precio [{producto['precio']}]: ").strip()
+    if precio_str:
+        try:
+            cambios["catalogo.$.precio"] = float(precio_str)
+        except ValueError:
+            print("  Precio invalido, se mantiene el actual.")
+
+    nueva_categoria = input(f"  Categoria [{producto['categoria']}]: ").strip()
+    if nueva_categoria:
+        cambios["catalogo.$.categoria"] = nueva_categoria
+
+    nueva_desc = input(f"  Descripcion [{producto.get('descripcion', '')}]: ").strip()
+    if nueva_desc:
+        cambios["catalogo.$.descripcion"] = nueva_desc
+
+    disp_actual = "s" if producto.get("disponible", True) else "n"
+    disp_str = input(f"  Disponible (s/n) [{disp_actual}]: ").strip().lower()
+    if disp_str in ("s", "n"):
+        cambios["catalogo.$.disponible"] = (disp_str == "s")
+
+    if not cambios:
+        print("No se hicieron cambios.")
+        input("\nPresione Enter para continuar...")
+        return
+
+    db.catalogo_establecimientos.update_one(
+        {"_id": id_est, "catalogo.id_producto": id_prod},
+        {"$set": cambios}
+    )
+
+    r = get_redis()
+    r.delete(f"catalogo:establecimiento:{id_est}")
+
+    print(f"\nProducto actualizado correctamente.")
     input("\nPresione Enter para continuar...")
 
 

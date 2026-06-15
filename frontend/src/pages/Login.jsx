@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { login } from '../api/auth.js'
 
 const ROLES = [
@@ -25,7 +25,7 @@ export default function Login() {
   const [error, setError] = useState('')
   const [showUsers, setShowUsers] = useState(false)
 
-  const TEST_USERS = {
+  const BASE_USERS = {
     admin: [{ nombre: 'Admin', email: 'admin', pwd: 'admin1234' }],
     cliente: [
       { nombre: 'Manuel Oliver', email: 'manu@test.com', pwd: 'test123' },
@@ -43,6 +43,18 @@ export default function Login() {
       { nombre: 'Carlos Diaz', email: 'carlos@test.com', pwd: 'test123' },
     ],
   }
+
+  const TEST_USERS = (() => {
+    try {
+      const registered = JSON.parse(localStorage.getItem('registered_users') || '[]')
+      const merged = { ...BASE_USERS }
+      registered.forEach(u => {
+        const key = u.rol
+        if (merged[key]) merged[key] = [...merged[key], { nombre: u.nombre, email: u.email, pwd: u.pwd }]
+      })
+      return merged
+    } catch { return BASE_USERS }
+  })()
 
   const fillUser = (rolKey, user) => {
     setRol(rolKey)
@@ -128,14 +140,11 @@ export default function Login() {
             />
           </div>
 
-          <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center text-sm">
             <label className="flex items-center gap-2 text-gray-600 cursor-pointer">
               <input type="checkbox" className="rounded" />
               Mantener sesion iniciada
             </label>
-            <span className="text-rappi cursor-pointer hover:underline text-xs">
-              Olvide mi contrasena
-            </span>
           </div>
 
           {error && (
@@ -154,8 +163,10 @@ export default function Login() {
         </form>
 
         <div className="text-center mt-4 text-sm text-gray-500">
-          No tienes cuenta?{' '}
-          <span className="text-rappi cursor-pointer hover:underline">Solicita acceso</span>
+          ¿No tenés cuenta?{' '}
+          <Link to="/register" className="text-rappi hover:underline font-medium">
+            Registrate
+          </Link>
         </div>
 
         {/* Test users info */}

@@ -304,6 +304,7 @@ MENUS = {
     "establecimiento": [
         ("🍽️", "Mi catálogo"),
         ("➕", "Agregar producto"),
+        ("✏️", "Actualizar producto"),
         ("📋", "Pedidos recibidos"),
         ("🔄", "Cambiar estado"),
         ("⭐", "Calificaciones"),
@@ -977,6 +978,52 @@ def pantalla_agregar_producto():
             db.catalogo_establecimientos.insert_one({"_id": u["id"], "nombre": u["nombre"], "tipo": u.get("tipo","restaurante"), "catalogo": [nuevo]})
         get_redis().delete(f"catalogo:establecimiento:{u['id']}")
         st.success(f"✅ **{nombre}** agregado al catálogo. ID: `{nuevo['id_producto']}`")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ESTABLECIMIENTO — ACTUALIZAR PRODUCTO
+# ══════════════════════════════════════════════════════════════════════════════
+def pantalla_actualizar_producto():
+    from connections import get_mongo, get_redis
+
+    st.title("✏️ Actualizar producto")
+    u = st.session_state.usuario
+    db = get_mongo()
+    doc = db.catalogo_establecimientos.find_one({"_id": u["id"]})
+
+    if not doc or not doc.get("catalogo"):
+        st.info("Todavía no tenés productos. Andá a 'Agregar producto'."); return
+
+    opciones = {f"{p['nombre']} — ${p['precio']:,.0f} ({p['id_producto']})": p for p in doc["catalogo"]}
+    seleccion = st.selectbox("Seleccioná el producto a editar", list(opciones.keys()))
+    prod = opciones[seleccion]
+
+    with st.form("editar_producto"):
+        c1, c2 = st.columns(2)
+        nombre      = c1.text_input("Nombre *", value=prod["nombre"])
+        precio      = c2.number_input("Precio *", min_value=0.0, step=100.0, value=float(prod["precio"]))
+        c3, c4 = st.columns(2)
+        categoria   = c3.text_input("Categoría *", value=prod.get("categoria", ""))
+        descripcion = c4.text_input("Descripción", value=prod.get("descripcion", ""))
+        disponible  = st.checkbox("Disponible", value=prod.get("disponible", True))
+        submitted   = st.form_submit_button("Guardar cambios", type="primary")
+
+    if submitted:
+        if not nombre or not categoria:
+            st.error("Nombre y categoría son obligatorios."); return
+        db.catalogo_establecimientos.update_one(
+            {"_id": u["id"], "catalogo.id_producto": prod["id_producto"]},
+            {"$set": {
+                "catalogo.$.nombre":      nombre,
+                "catalogo.$.precio":      precio,
+                "catalogo.$.categoria":   categoria,
+                "catalogo.$.descripcion": descripcion,
+                "catalogo.$.disponible":  disponible,
+            }}
+        )
+        get_redis().delete(f"catalogo:establecimiento:{u['id']}")
+        st.success(f"✅ **{nombre}** actualizado correctamente.")
+        st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1771,6 +1818,7 @@ ROUTES = {
     "Historial":                  pantalla_historial,
     "Mi catálogo":                pantalla_mi_catalogo,
     "Agregar producto":           pantalla_agregar_producto,
+    "Actualizar producto":        pantalla_actualizar_producto,
     "Pedidos recibidos":          pantalla_pedidos_recibidos,
     "Cambiar estado":             pantalla_cambiar_estado,
     "Calificaciones":             pantalla_calificaciones_establecimiento,

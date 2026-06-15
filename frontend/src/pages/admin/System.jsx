@@ -10,20 +10,10 @@ const DB_INFO = {
   redis:      { label: 'Redis',      icon: '⚡', desc: 'Redis Cloud · Cache y sesiones' },
 }
 
-const LOGS = [
-  '[2026-06-06 00:00:01] Sistema iniciado',
-  '[2026-06-06 00:00:02] PostgreSQL pool inicializado',
-  '[2026-06-06 00:00:03] MongoDB Atlas conectado',
-  '[2026-06-06 00:00:04] Cassandra REST session activa',
-  '[2026-06-06 00:00:05] Neo4j Aura driver listo',
-  '[2026-06-06 00:00:06] Redis Cloud ping OK',
-  '[2026-06-06 00:00:07] FastAPI server listening on :8000',
-  '[2026-06-06 00:00:08] CORS configurado para localhost:5173',
-]
-
 export default function System() {
   const [conexiones, setConexiones] = useState({})
   const [loadingConex, setLoadingConex] = useState(false)
+  const [lastCheck, setLastCheck] = useState(null)
   const [seedLoading, setSeedLoading] = useState(false)
   const [seedMsg, setSeedMsg] = useState('')
   const [seedErr, setSeedErr] = useState('')
@@ -37,6 +27,7 @@ export default function System() {
     try {
       const data = await verificarConexiones()
       setConexiones(data)
+      setLastCheck(new Date().toLocaleString('es-AR'))
     } catch { setConexiones({ error: 'No se pudo conectar al servidor' }) }
     setLoadingConex(false)
   }
@@ -155,16 +146,27 @@ export default function System() {
         </div>
       </div>
 
-      {/* Live logs (static) */}
-      <div className="bg-gray-900 border border-gray-700 rounded-xl p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-          <span className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Live Operational Stream</span>
+      {/* Resultado de la última verificación */}
+      {lastCheck && (
+        <div className="bg-gray-900 border border-gray-700 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-gray-400 text-xs font-semibold uppercase tracking-wider">
+              Último chequeo: {lastCheck}
+            </span>
+          </div>
+          <div className="font-mono text-xs space-y-1">
+            {Object.entries(DB_INFO).map(([key, info]) => {
+              const status = conexiones[key]
+              const isOk = status === 'ok'
+              return (
+                <div key={key} className={isOk ? 'text-green-400' : 'text-red-400'}>
+                  [{new Date().toLocaleTimeString('es-AR')}] {info.label}: {isOk ? 'conexion OK' : `ERROR — ${status}`}
+                </div>
+              )
+            })}
+          </div>
         </div>
-        <div className="font-mono text-xs text-green-400 space-y-1">
-          {LOGS.map((log, i) => <div key={i}>{log}</div>)}
-        </div>
-      </div>
+      )}
     </Layout>
   )
 }
