@@ -949,6 +949,41 @@ def get_pedidos_est(user=Depends(_est_user)):
 
 @app.put("/api/establecimiento/pedido/{id_pedido}/estado")
 def cambiar_estado_pedido(id_pedido: int, body: EstadoBody, user=Depends(_est_user)):
+    if body.estado == "cancelado":
+        conn = get_postgres()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT id_repartidor FROM pedido WHERE id_pedido = %s AND id_establecimiento = %s",
+                (id_pedido, user["id"])
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Pedido no encontrado")
+            id_repartidor = row[0]
+
+            cur.execute("UPDATE pago SET estado = 'cancelado' WHERE id_pedido = %s", (id_pedido,))
+
+            if id_repartidor:
+                cur.execute(
+                    "UPDATE repartidor SET disponibilidad = true WHERE id_repartidor = %s",
+                    (id_repartidor,)
+                )
+
+            conn.commit()
+        except HTTPException:
+            raise
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cur.close()
+            conn.close()
+
+        if id_repartidor:
+            r = get_redis()
+            r.smove("repartidores:ocupados", "repartidores:disponibles", str(id_repartidor))
+
     session = get_cassandra()
     session.execute(
         "INSERT INTO estado_pedido (id_pedido,fecha_hora,estado,observacion) VALUES (%s,%s,%s,%s)",

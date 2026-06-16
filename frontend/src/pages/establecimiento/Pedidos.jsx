@@ -3,7 +3,8 @@ import Layout from '../../components/Layout.jsx'
 import Badge from '../../components/Badge.jsx'
 import { getPedidosEst, cambiarEstadoPedido } from '../../api/establecimiento.js'
 
-const ESTADOS_OPCIONES = ['creado', 'aceptado', 'preparando', 'listo_para_retirar', 'cancelado']
+const ESTADOS_OPCIONES = ['creado', 'aceptado', 'preparando', 'listo_para_retirar', 'repartidor_asignado', 'en_camino', 'entregado', 'cancelado']
+const ESTADOS_SOLO_LECTURA = ['repartidor_asignado', 'en_camino', 'entregado', 'cancelado']
 
 export default function Pedidos() {
   const [pedidos, setPedidos] = useState([])
@@ -73,7 +74,8 @@ export default function Pedidos() {
                   <select
                     value={nuevosEstados[p.id_pedido] || p.estado || 'creado'}
                     onChange={e => setNuevosEstados(prev => ({ ...prev, [p.id_pedido]: e.target.value }))}
-                    className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-rappi"
+                    disabled={ESTADOS_SOLO_LECTURA.includes(p.estado)}
+                    className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-rappi disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {ESTADOS_OPCIONES.map(s => (
                       <option key={s} value={s}>{s.replace(/_/g, ' ').toUpperCase()}</option>
@@ -87,7 +89,7 @@ export default function Pedidos() {
                   />
                   <button
                     onClick={() => handleCambiarEstado(p.id_pedido)}
-                    disabled={updating[p.id_pedido]}
+                    disabled={updating[p.id_pedido] || ESTADOS_SOLO_LECTURA.includes(p.estado)}
                     className="bg-rappi hover:bg-rappi-dark text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-60"
                   >
                     {updating[p.id_pedido] ? '...' : 'Actualizar'}
